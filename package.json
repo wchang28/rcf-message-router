@@ -1,0 +1,28 @@
+{
+  "name": "rcf-message-router",
+  "version": "0.0.1",
+  "description": "RCF Message Router",
+  "main": "./js/index.js",
+  "typings": "./js/index.d.ts",
+  "keywords": [
+    "RCF",
+    "Messageing",
+    "Router"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wchang28/rcf-message-router.git"
+  },
+  "author": "Wen Chang",
+  "license": "MIT",
+  "dependencies": {
+    "@types/body-parser": "0.0.33",
+    "@types/express": "^4.0.33",
+    "@types/node": "^6.0.42",
+    "@types/node-uuid": "0.0.28",
+    "body-parser": "^1.15.2",
+    "express": "^4.14.0",
+    "node-uuid": "^1.4.7",
+    "rcf": "git+https://github.com/wchang28/rcf.git"
+  }
+}
