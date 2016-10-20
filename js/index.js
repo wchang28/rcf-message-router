@@ -123,31 +123,29 @@ var DestAuthMode = exports.DestAuthMode;
 ;
 ;
 function getDestinationAuthReqRes(req, res) {
-    var authReq = {
-        method: req.method,
-        authMode: req['authMode'],
-        headers: req.headers,
-        originalUrl: req.originalUrl,
-        url: req.url,
-        path: req.path,
-        originalReq: req['originalReq']
-    };
+    var authReq = req;
     var authRes = res;
     return { authReq: authReq, authRes: authRes };
 }
 exports.getDestinationAuthReqRes = getDestinationAuthReqRes;
 function authorizeDestination(authMode, destination, headers, authApp, originalReq, done) {
     if (authApp) {
-        if (authMode == DestAuthMode.Subscribe)
-            console.log('<<SUBSCRIBE>>');
-        else
-            console.log('<<SEND>>');
         var req = {
             "method": (authMode == DestAuthMode.Subscribe ? "GET" : "POST"),
             "authMode": authMode,
             "headers": headers,
             "url": destination,
-            "originalReq": (originalReq ? originalReq : null)
+            "originalReq": (originalReq ? originalReq : null),
+            "toJSON": function () {
+                return {
+                    "method": this.method,
+                    "authMode": this.authMode,
+                    "headers": this.headers,
+                    "originalUrl": this.originalUrl,
+                    "url": this.destination,
+                    "path": this.path
+                };
+            }
         };
         var res_1 = {
             '___err___': null,

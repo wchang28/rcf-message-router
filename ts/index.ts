@@ -165,31 +165,29 @@ export interface IDestAuthReqRes {
 };
 
 export function getDestinationAuthReqRes(req: express.Request, res: express.Response) : IDestAuthReqRes {
-    let authReq: IDestAuthRequest = {
-        method: req.method
-        ,authMode: req['authMode']
-        ,headers: req.headers
-        ,originalUrl: req.originalUrl
-        ,url: req.url
-        ,path: req.path
-        ,originalReq: req['originalReq']
-    } ;
+    let authReq: any = req;
     let authRes:any = res;
     return {authReq, authRes};
 }
 
 function authorizeDestination(authMode: DestAuthMode, destination: string, headers:{[field: string]: any}, authApp:any, originalReq: express.Request, done: (err:any) => void) {
 	if (authApp) {
-        if (authMode == DestAuthMode.Subscribe)
-            console.log('<<SUBSCRIBE>>');
-        else
-            console.log('<<SEND>>');
 		let req = {
 			"method": (authMode == DestAuthMode.Subscribe ? "GET" : "POST")
             ,"authMode": authMode
 			,"headers": headers
 			,"url": destination
 			,"originalReq": (originalReq ? originalReq : null)
+            ,"toJSON": function() {
+                return {
+                    "method": this.method
+                    ,"authMode": this.authMode
+                    ,"headers": this.headers
+                    ,"originalUrl": this.originalUrl
+                    ,"url": this.destination
+                    ,"path": this.path
+                };
+            }
 		};
 		let res = {
 			'___err___': null
