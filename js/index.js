@@ -123,7 +123,15 @@ var DestAuthMode = exports.DestAuthMode;
 ;
 ;
 function getDestinationAuthReqRes(req, res) {
-    var authReq = req;
+    var authReq = {
+        method: req.method,
+        authMode: req['authMode'],
+        headers: req.headers,
+        originalUrl: req.originalUrl,
+        url: req.url,
+        path: req.path,
+        originalReq: req['originalReq']
+    };
     var authRes = res;
     return { authReq: authReq, authRes: authRes };
 }
@@ -131,8 +139,7 @@ exports.getDestinationAuthReqRes = getDestinationAuthReqRes;
 function authorizeDestination(authMode, destination, headers, authApp, originalReq, done) {
     if (authApp) {
         var req = {
-            //"method": (authMode === DestAuthMode.Subscribe ? "GET" : "POST")
-            "method": 'GET',
+            "method": (authMode === DestAuthMode.Subscribe ? "GET" : "POST"),
             "authMode": authMode,
             "headers": headers,
             "url": destination,

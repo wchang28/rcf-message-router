@@ -165,16 +165,23 @@ export interface IDestAuthReqRes {
 };
 
 export function getDestinationAuthReqRes(req: express.Request, res: express.Response) : IDestAuthReqRes {
-    let authReq: any = req;
-    let authRes: any = res;
+    let authReq: IDestAuthRequest = {
+        method: req.method
+        ,authMode: req['authMode']
+        ,headers: req.headers
+        ,originalUrl: req.originalUrl
+        ,url: req.url
+        ,path: req.path
+        ,originalReq: req['originalReq']
+    } ;
+    let authRes:any = res;
     return {authReq, authRes};
 }
 
 function authorizeDestination(authMode: DestAuthMode, destination: string, headers:{[field: string]: any}, authApp:any, originalReq: express.Request, done: (err:any) => void) {
 	if (authApp) {
 		let req = {
-			//"method": (authMode === DestAuthMode.Subscribe ? "GET" : "POST")
-            "method": 'GET'
+			"method": (authMode === DestAuthMode.Subscribe ? "GET" : "POST")
             ,"authMode": authMode
 			,"headers": headers
 			,"url": destination
