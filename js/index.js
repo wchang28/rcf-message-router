@@ -206,8 +206,8 @@ function getRouter(eventPath, options) {
         req.on("close", function () {
             router.eventEmitter.emit('sse_disconnect', ep); // fire the "sse_disconnect" event
             if (conn_id.length > 0) {
-                router.eventEmitter.emit('client_disconnect', cep); // fire the "client_disconnect" event
                 connectionsManager.removeConnection(conn_id);
+                router.eventEmitter.emit('client_disconnect', cep); // fire the "client_disconnect" event
             }
         });
     });
