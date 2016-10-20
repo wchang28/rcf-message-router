@@ -145,8 +145,10 @@ export enum DestAuthMode {
 }
 
 export interface IDestAuthRequest {
+    method: string;
     authMode: DestAuthMode;
     headers:{[field: string]: any};
+    originalUrl: string;
     url: string;
     path: string;
     originalReq: express.Request;

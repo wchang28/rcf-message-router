@@ -60,10 +60,12 @@ export declare enum DestAuthMode {
     SendMsg = 1,
 }
 export interface IDestAuthRequest {
+    method: string;
     authMode: DestAuthMode;
     headers: {
         [field: string]: any;
     };
+    originalUrl: string;
     url: string;
     path: string;
     originalReq: express.Request;
