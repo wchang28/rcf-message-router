@@ -128,7 +128,7 @@ function getDestinationAuthReqRes(req, res) {
     return { authReq: authReq, authRes: authRes };
 }
 exports.getDestinationAuthReqRes = getDestinationAuthReqRes;
-function authorizeDestination(authMode, destination, headers, authApp, originalReq, done) {
+function authorizeDestination(authMode, destination, headers, body, authApp, originalReq, done) {
     if (authApp) {
         var req = {
             "method": (authMode == DestAuthMode.Subscribe ? "GET" : "POST"),
@@ -136,6 +136,7 @@ function authorizeDestination(authMode, destination, headers, authApp, originalR
             "headers": headers,
             "url": destination,
             "originalReq": (originalReq ? originalReq : null),
+            "body": (body ? body : null),
             "toJSON": function () {
                 return {
                     "method": this.method,
@@ -143,7 +144,8 @@ function authorizeDestination(authMode, destination, headers, authApp, originalR
                     "headers": this.headers,
                     "originalUrl": this.originalUrl,
                     "url": this.destination,
-                    "path": this.path
+                    "path": this.path,
+                    "body": this.body
                 };
             }
         };
@@ -231,7 +233,7 @@ function getRouter(eventPath, options) {
         var data = req.body;
         var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'subscribe', data: data };
         router.eventEmitter.emit('client_cmd', cep);
-        authorizeDestination(DestAuthMode.Subscribe, data.destination, data.headers, options.destinationAuthorizeApp, req, function (err) {
+        authorizeDestination(DestAuthMode.Subscribe, data.destination, data.headers, null, options.destinationAuthorizeApp, req, function (err) {
             if (err)
                 res.status(403).json({ exception: JSON.parse(JSON.stringify(err)) });
             else {
@@ -261,7 +263,7 @@ function getRouter(eventPath, options) {
         var data = req.body;
         var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'send', data: data };
         router.eventEmitter.emit('client_cmd', cep);
-        authorizeDestination(DestAuthMode.SendMsg, data.destination, data.headers, options.destinationAuthorizeApp, req, function (err) {
+        authorizeDestination(DestAuthMode.SendMsg, data.destination, data.headers, data.body, options.destinationAuthorizeApp, req, function (err) {
             if (err)
                 res.status(403).json({ exception: JSON.parse(JSON.stringify(err)) });
             else {
