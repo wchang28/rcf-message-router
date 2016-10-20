@@ -3,25 +3,28 @@
 import * as rcf from 'rcf';
 import * as events from 'events';
 import * as express from 'express';
-export interface IConnectionCreatedHandler {
-    (err: any, conn_id: string): void;
+export interface CookieSetter {
+    (req: any): any;
+}
+export interface Options {
+    pingIntervalMS?: number;
+    cookieSetter?: CookieSetter;
 }
 export declare class ConnectionsManager extends events.EventEmitter {
     private connCount;
     private __connections;
     constructor();
-    getConnectionsCount(): number;
-    createConnection(req: express.Request, connectionFactory: rcf.MsgConnFactory, remoteAddress: string, messageCB: rcf.MessageCallback, done: IConnectionCreatedHandler): void;
+    readonly ConnectionsCount: number;
+    createConnection(remoteAddress: string, cookie: any, messageCB: rcf.MessageCallback, pingIntervalMS: number): string;
     removeConnection(conn_id: string): void;
-    addSubscription(req: express.Request, conn_id: string, sub_id: string, destination: string, headers: {
+    addSubscription(conn_id: string, sub_id: string, destination: string, headers: {
         [field: string]: any;
     }, done?: rcf.DoneHandler): void;
-    removeSubscription(req: express.Request, conn_id: string, sub_id: string, done?: rcf.DoneHandler): void;
-    private forwardMessageImpl(req, srcConn, destination, headers, message, done?);
-    forwardMessage(req: express.Request, conn_id: string, destination: string, headers: {
+    removeSubscription(conn_id: string, sub_id: string, done?: rcf.DoneHandler): void;
+    injectMessage(destination: string, headers: {
         [field: string]: any;
     }, message: any, done?: rcf.DoneHandler): void;
-    injectMessage(destination: string, headers: {
+    forwardMessage(conn_id: string, destination: string, headers: {
         [field: string]: any;
     }, message: any, done?: rcf.DoneHandler): void;
     toJSON(): Object;
@@ -41,4 +44,4 @@ export interface CommandEventParams extends ConnectedEventParams {
     cmd: string;
     data: any;
 }
-export declare function getRouter(eventPath: string, connectionFactory: rcf.MsgConnFactory): ISSETopicRouter;
+export declare function getRouter(eventPath: string, options?: Options): ISSETopicRouter;

@@ -8,6 +8,11 @@ var uuid = require('node-uuid');
 var events = require('events');
 var express = require('express');
 var bodyParser = require('body-parser');
+var _ = require('lodash');
+var topicConnection_1 = require('./topicConnection');
+var defaultOptions = {
+    pingIntervalMS: 10000
+};
 // this class emits the following events
 // 1. change
 var ConnectionsManager = (function (_super) {
@@ -17,24 +22,22 @@ var ConnectionsManager = (function (_super) {
         this.connCount = 0;
         this.__connections = {};
     }
-    ConnectionsManager.prototype.getConnectionsCount = function () { return this.connCount; };
-    ConnectionsManager.prototype.createConnection = function (req, connectionFactory, remoteAddress, messageCB, done) {
+    Object.defineProperty(ConnectionsManager.prototype, "ConnectionsCount", {
+        get: function () { return this.connCount; },
+        enumerable: true,
+        configurable: true
+    });
+    ConnectionsManager.prototype.createConnection = function (remoteAddress, cookie, messageCB, pingIntervalMS) {
         var _this = this;
         var conn_id = uuid.v4();
-        connectionFactory(req, conn_id, remoteAddress, messageCB, function (err, conn) {
-            if (err) {
-                done(err, null);
-            }
-            else {
-                _this.__connections[conn_id] = conn;
-                conn.onChange(function () {
-                    _this.emit('change');
-                });
-                _this.connCount++;
-                _this.emit('change');
-                done(null, conn_id);
-            }
+        var conn = new topicConnection_1.TopicConnection(conn_id, remoteAddress, cookie, messageCB, pingIntervalMS);
+        this.__connections[conn_id] = conn;
+        conn.onChange(function () {
+            _this.emit('change');
         });
+        this.connCount++;
+        this.emit('change');
+        return conn_id;
     };
     ConnectionsManager.prototype.removeConnection = function (conn_id) {
         var conn = this.__connections[conn_id];
@@ -45,32 +48,32 @@ var ConnectionsManager = (function (_super) {
             this.emit('change');
         }
     };
-    ConnectionsManager.prototype.addSubscription = function (req, conn_id, sub_id, destination, headers, done) {
+    ConnectionsManager.prototype.addSubscription = function (conn_id, sub_id, destination, headers, done) {
         var conn = this.__connections[conn_id];
         if (conn) {
-            conn.addSubscription(req, sub_id, destination, headers, done);
+            conn.addSubscription(sub_id, destination, headers, done);
         }
         else {
             if (typeof done === 'function')
                 done('bad connection');
         }
     };
-    ConnectionsManager.prototype.removeSubscription = function (req, conn_id, sub_id, done) {
+    ConnectionsManager.prototype.removeSubscription = function (conn_id, sub_id, done) {
         var conn = this.__connections[conn_id];
         if (conn) {
-            conn.removeSubscription(req, sub_id, done);
+            conn.removeSubscription(sub_id, done);
         }
         else {
             if (typeof done === 'function')
                 done('bad connection');
         }
     };
-    ConnectionsManager.prototype.forwardMessageImpl = function (req, srcConn, destination, headers, message, done) {
+    ConnectionsManager.prototype.injectMessage = function (destination, headers, message, done) {
         var left = this.connCount;
         var errs = [];
         for (var id in this.__connections) {
             var conn = this.__connections[id];
-            conn.forwardMessage(req, srcConn, destination, headers, message, function (err) {
+            conn.forwardMessage(destination, headers, message, function (err) {
                 left--;
                 if (err)
                     errs.push(err);
@@ -81,18 +84,15 @@ var ConnectionsManager = (function (_super) {
             });
         }
     };
-    ConnectionsManager.prototype.forwardMessage = function (req, conn_id, destination, headers, message, done) {
-        var srcConn = this.__connections[conn_id];
-        if (srcConn) {
-            this.forwardMessageImpl(req, srcConn, destination, headers, message, done);
+    ConnectionsManager.prototype.forwardMessage = function (conn_id, destination, headers, message, done) {
+        var conn = this.__connections[conn_id];
+        if (conn) {
+            this.injectMessage(destination, headers, message, done);
         }
         else {
             if (typeof done === 'function')
                 done('bad connection');
         }
-    };
-    ConnectionsManager.prototype.injectMessage = function (destination, headers, message, done) {
-        this.forwardMessageImpl(null, null, destination, headers, message, done);
     };
     ConnectionsManager.prototype.toJSON = function () {
         var ret = [];
@@ -105,7 +105,9 @@ var ConnectionsManager = (function (_super) {
     return ConnectionsManager;
 }(events.EventEmitter));
 exports.ConnectionsManager = ConnectionsManager;
-function getRouter(eventPath, connectionFactory) {
+function getRouter(eventPath, options) {
+    options = options || defaultOptions;
+    options = _.assignIn({}, defaultOptions, options);
     var router = express.Router();
     router.use(bodyParser.json({ 'limit': '100mb' }));
     var connectionsManager = new ConnectionsManager();
@@ -113,9 +115,10 @@ function getRouter(eventPath, connectionFactory) {
     router.eventEmitter = new events.EventEmitter();
     // server side events streaming
     router.get(eventPath, function (req, res) {
+        var cookie = (options.cookieSetter ? options.cookieSetter(req) : null);
         var remoteAddress = req.connection.remoteAddress + ':' + req.connection.remotePort.toString();
         var ep = { req: req, remoteAddress: remoteAddress };
-        router.eventEmitter.emit('sse_connect', ep);
+        router.eventEmitter.emit('sse_connect', ep); // fire the "sse_connect" event
         // init SSE
         ///////////////////////////////////////////////////////////////////////
         //send headers for event-stream connection
@@ -135,25 +138,19 @@ function getRouter(eventPath, connectionFactory) {
         };
         res.write('\n');
         ///////////////////////////////////////////////////////////////////////
-        var conn_id = '';
-        // initialize event streaming
+        // create a connection
         ///////////////////////////////////////////////////////////////////////
-        connectionsManager.createConnection(req, connectionFactory, remoteAddress, function (msg) { res.sseSend(msg); }, function (err, connnection_id) {
-            if (err)
-                req.socket.end(); // close the socket, this will trigger req.on("close")
-            else {
-                conn_id = connnection_id;
-                var cep = { req: req, remoteAddress: remoteAddress, conn_id: conn_id };
-                router.eventEmitter.emit('client_connect', cep);
-            }
-        });
+        var conn_id = connectionsManager.createConnection(remoteAddress, cookie, function (msg) {
+            res.sseSend(msg);
+        }, options.pingIntervalMS);
         ///////////////////////////////////////////////////////////////////////
+        var cep = { req: req, remoteAddress: remoteAddress, conn_id: conn_id };
+        router.eventEmitter.emit('client_connect', cep); // fire the "client_connect" event
         // The 'close' event is fired when a user closes their browser window.
         req.on("close", function () {
-            router.eventEmitter.emit('sse_disconnect', ep);
+            router.eventEmitter.emit('sse_disconnect', ep); // fire the "sse_disconnect" event
             if (conn_id.length > 0) {
-                var cep = { req: req, remoteAddress: remoteAddress, conn_id: conn_id };
-                router.eventEmitter.emit('client_disconnect', cep);
+                router.eventEmitter.emit('client_disconnect', cep); // fire the "client_disconnect" event
                 connectionsManager.removeConnection(conn_id);
             }
         });
@@ -163,7 +160,7 @@ function getRouter(eventPath, connectionFactory) {
         var data = req.body;
         var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'subscribe', data: data };
         router.eventEmitter.emit('client_cmd', cep);
-        connectionsManager.addSubscription(req, data.conn_id, data.sub_id, data.destination, data.headers, function (err) {
+        connectionsManager.addSubscription(data.conn_id, data.sub_id, data.destination, data.headers, function (err) {
             if (err) {
                 res.jsonp({ exception: JSON.parse(JSON.stringify(err)) });
             }
@@ -177,7 +174,7 @@ function getRouter(eventPath, connectionFactory) {
         var data = req.query;
         var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'unsubscribe', data: data };
         router.eventEmitter.emit('client_cmd', cep);
-        connectionsManager.removeSubscription(req, data.conn_id, data.sub_id, function (err) {
+        connectionsManager.removeSubscription(data.conn_id, data.sub_id, function (err) {
             if (err) {
                 res.jsonp({ exception: JSON.parse(JSON.stringify(err)) });
             }
@@ -191,7 +188,7 @@ function getRouter(eventPath, connectionFactory) {
         var data = req.body;
         var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'send', data: data };
         router.eventEmitter.emit('client_cmd', cep);
-        connectionsManager.forwardMessage(req, data.conn_id, data.destination, data.headers, data.body, function (err) {
+        connectionsManager.forwardMessage(data.conn_id, data.destination, data.headers, data.body, function (err) {
             if (err) {
                 res.jsonp({ exception: JSON.parse(JSON.stringify(err)) });
             }

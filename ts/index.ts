@@ -3,38 +3,43 @@ import * as uuid from 'node-uuid';
 import * as events from 'events';
 import * as express from 'express';
 import * as bodyParser from 'body-parser';
+import * as _ from 'lodash';
+import {TopicConnection} from './topicConnection';
 
-export interface IConnectionCreatedHandler {
-    (err: any, conn_id: string) : void;
+export interface CookieSetter {
+    (req: any): any;
+}
+
+export interface Options {
+    pingIntervalMS?: number
+    cookieSetter?: CookieSetter;
+}
+
+let defaultOptions: Options = {
+	pingIntervalMS: 10000
 }
 
 // this class emits the following events
 // 1. change
-export class ConnectionsManager extends events.EventEmitter
-{
+export class ConnectionsManager extends events.EventEmitter {
     private connCount: number;
-    private __connections : {[conn_id: string]: rcf.IMsgConnection;}
+    private __connections : {[conn_id: string]: TopicConnection;}
     constructor() {
         super();
         this.connCount = 0;
         this.__connections = {};
     }
-    getConnectionsCount() : number { return this.connCount;}
-    createConnection(req: express.Request, connectionFactory: rcf.MsgConnFactory, remoteAddress: string, messageCB: rcf.MessageCallback, done: IConnectionCreatedHandler) : void {
+    get ConnectionsCount() : number { return this.connCount;}
+    createConnection(remoteAddress: string, cookie: any, messageCB: rcf.MessageCallback, pingIntervalMS: number) : string {
         let conn_id = uuid.v4();
-        connectionFactory(req, conn_id, remoteAddress, messageCB, (err: any, conn: rcf.IMsgConnection) => {
-            if (err) {
-                done(err, null);
-            } else {
-                this.__connections[conn_id] = conn;
-                conn.onChange(() => {
-                    this.emit('change');
-                });
-                this.connCount++;
-                this.emit('change');
-                done(null, conn_id);
-            }
+        let conn = new TopicConnection(conn_id, remoteAddress, cookie, messageCB, pingIntervalMS);
+        this.__connections[conn_id] = conn;
+        conn.onChange(() => {
+            this.emit('change');
         });
+        this.connCount++;
+        this.emit('change');
+        return conn_id;
     }
     removeConnection(conn_id: string) : void {
         let conn = this.__connections[conn_id];
@@ -45,28 +50,28 @@ export class ConnectionsManager extends events.EventEmitter
             this.emit('change');
         }     
     }
-    addSubscription(req: express.Request, conn_id: string, sub_id:string, destination: string, headers:{[field: string]: any}, done?: rcf.DoneHandler)  {
+    addSubscription(conn_id: string, sub_id:string, destination: string, headers:{[field: string]: any}, done?: rcf.DoneHandler)  {
         let conn = this.__connections[conn_id];
         if (conn) {
-            conn.addSubscription(req, sub_id, destination, headers, done);
+            conn.addSubscription(sub_id, destination, headers, done);
         } else {
             if (typeof done === 'function') done('bad connection');
         }
     }
-    removeSubscription(req: express.Request, conn_id: string, sub_id:string, done?: rcf.DoneHandler) {
+    removeSubscription(conn_id: string, sub_id:string, done?: rcf.DoneHandler) {
         let conn = this.__connections[conn_id];
         if (conn) {
-            conn.removeSubscription(req, sub_id, done);
+            conn.removeSubscription(sub_id, done);
         } else {
             if (typeof done === 'function') done('bad connection');
         }        
     }
-    private forwardMessageImpl(req:express.Request, srcConn:rcf.IMsgConnection, destination: string, headers: {[field: string]:any}, message:any, done?: rcf.DoneHandler) {
+    injectMessage(destination: string, headers: {[field: string]:any}, message:any, done?: rcf.DoneHandler) {
         let left = this.connCount;
         let errs = [];
         for (let id in this.__connections) {    // for each connection
             let conn = this.__connections[id];
-            conn.forwardMessage(req, srcConn, destination, headers, message, (err: any) => {
+            conn.forwardMessage(destination, headers, message, (err: any) => {
                 left--;
                 if (err) errs.push(err);
                 if (left === 0) {
@@ -75,16 +80,13 @@ export class ConnectionsManager extends events.EventEmitter
             });
         }
     }
-    forwardMessage(req: express.Request, conn_id: string, destination: string, headers: {[field: string]:any}, message:any, done?: rcf.DoneHandler) {
-        let srcConn = this.__connections[conn_id];
-        if (srcConn) {
-            this.forwardMessageImpl(req, srcConn, destination, headers, message, done);
+    forwardMessage(conn_id: string, destination: string, headers: {[field: string]:any}, message:any, done?: rcf.DoneHandler) {
+        let conn = this.__connections[conn_id];
+        if (conn) {
+            this.injectMessage(destination, headers, message, done);
         } else {
             if (typeof done === 'function') done('bad connection');
         }      
-    }
-    injectMessage(destination: string, headers: {[field: string]:any}, message:any, done?: rcf.DoneHandler) {
-        this.forwardMessageImpl(null, null, destination, headers, message, done);
     }
     toJSON() : Object {
         let ret = [];
@@ -119,7 +121,10 @@ export interface CommandEventParams extends ConnectedEventParams {
     data: any;
 }
 
-export function getRouter(eventPath: string, connectionFactory: rcf.MsgConnFactory) : ISSETopicRouter {
+export function getRouter(eventPath: string, options?: Options) : ISSETopicRouter {
+    options = options || defaultOptions;
+    options = _.assignIn({}, defaultOptions, options);
+    
     let router: ISSETopicRouter  = <ISSETopicRouter>express.Router();
     router.use(bodyParser.json({'limit': '100mb'}));
     let connectionsManager = new ConnectionsManager();
@@ -128,9 +133,11 @@ export function getRouter(eventPath: string, connectionFactory: rcf.MsgConnFacto
     
     // server side events streaming
     router.get(eventPath, (req: express.Request, res: SSEResponse) => {
+        let cookie = (options.cookieSetter ? options.cookieSetter(req) : null);
         let remoteAddress = req.connection.remoteAddress+':'+req.connection.remotePort.toString();
         let ep: EventParams = {req, remoteAddress};
-        router.eventEmitter.emit('sse_connect', ep);
+
+        router.eventEmitter.emit('sse_connect', ep);    // fire the "sse_connect" event
         
         // init SSE
         ///////////////////////////////////////////////////////////////////////
@@ -151,31 +158,22 @@ export function getRouter(eventPath: string, connectionFactory: rcf.MsgConnFacto
         res.write('\n');
         ///////////////////////////////////////////////////////////////////////
 		
-        let conn_id: string = '';
-        // initialize event streaming
+        // create a connection
         ///////////////////////////////////////////////////////////////////////
-        connectionsManager.createConnection(
-        req
-        ,connectionFactory
-        ,remoteAddress
-        ,(msg: rcf.IMessage) => {res.sseSend(msg);}
-        ,(err: any, connnection_id: string) => {
-            if (err)    // connection cannot be created due to some error
-                req.socket.end();   // close the socket, this will trigger req.on("close")
-            else {
-                conn_id = connnection_id;
-                let cep: ConnectedEventParams = {req, remoteAddress, conn_id};
-                router.eventEmitter.emit('client_connect', cep);
-            }
-        });
+        let conn_id = connectionsManager.createConnection(remoteAddress, cookie, (msg: rcf.IMessage) => {
+            res.sseSend(msg);
+        }, options.pingIntervalMS);
         ///////////////////////////////////////////////////////////////////////
-		
+
+        let cep: ConnectedEventParams = {req, remoteAddress, conn_id};
+
+        router.eventEmitter.emit('client_connect', cep);    // fire the "client_connect" event
+        		
         // The 'close' event is fired when a user closes their browser window.
         req.on("close", () => {
-            router.eventEmitter.emit('sse_disconnect', ep);
+            router.eventEmitter.emit('sse_disconnect', ep); // fire the "sse_disconnect" event
             if (conn_id.length > 0) {
-                let cep: ConnectedEventParams = {req, remoteAddress, conn_id};
-                router.eventEmitter.emit('client_disconnect', cep);
+                router.eventEmitter.emit('client_disconnect', cep);// fire the "client_disconnect" event
                 connectionsManager.removeConnection(conn_id);
             }
         });
@@ -186,7 +184,7 @@ export function getRouter(eventPath: string, connectionFactory: rcf.MsgConnFacto
         let data = req.body;
         let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'subscribe', data};
         router.eventEmitter.emit('client_cmd', cep);
-        connectionsManager.addSubscription(req, data.conn_id, data.sub_id, data.destination, data.headers, (err: any) => {
+        connectionsManager.addSubscription(data.conn_id, data.sub_id, data.destination, data.headers, (err: any) => {
             if (err) {
                 res.jsonp({exception: JSON.parse(JSON.stringify(err))});
             } else {
@@ -200,7 +198,7 @@ export function getRouter(eventPath: string, connectionFactory: rcf.MsgConnFacto
         let data = req.query;
         let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'unsubscribe', data};
         router.eventEmitter.emit('client_cmd', cep);
-        connectionsManager.removeSubscription(req, data.conn_id, data.sub_id, (err: any) => {
+        connectionsManager.removeSubscription(data.conn_id, data.sub_id, (err: any) => {
             if (err) {
                 res.jsonp({exception: JSON.parse(JSON.stringify(err))});
             } else {
@@ -214,7 +212,7 @@ export function getRouter(eventPath: string, connectionFactory: rcf.MsgConnFacto
         let data = req.body;
         let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'send', data};
         router.eventEmitter.emit('client_cmd', cep);
-        connectionsManager.forwardMessage(req, data.conn_id, data.destination, data.headers, data.body, (err: any) => {
+        connectionsManager.forwardMessage(data.conn_id, data.destination, data.headers, data.body, (err: any) => {
             if (err) {
                 res.jsonp({exception: JSON.parse(JSON.stringify(err))});
             } else {
