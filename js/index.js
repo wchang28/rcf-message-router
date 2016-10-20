@@ -131,8 +131,9 @@ exports.getDestinationAuthReqRes = getDestinationAuthReqRes;
 function authorizeDestination(authMode, destination, headers, authApp, originalReq, done) {
     if (authApp) {
         var req = {
-            "method": (authMode === DestAuthMode.Subscribe ? "GET" : "POST"),
-            'authMode': authMode,
+            //"method": (authMode === DestAuthMode.Subscribe ? "GET" : "POST")
+            "method": 'GET',
+            "authMode": authMode,
             "headers": headers,
             "url": destination,
             "originalReq": (originalReq ? originalReq : null)

@@ -173,8 +173,9 @@ export function getDestinationAuthReqRes(req: express.Request, res: express.Resp
 function authorizeDestination(authMode: DestAuthMode, destination: string, headers:{[field: string]: any}, authApp:any, originalReq: express.Request, done: (err:any) => void) {
 	if (authApp) {
 		let req = {
-			"method": (authMode === DestAuthMode.Subscribe ? "GET" : "POST")
-            ,'authMode': authMode
+			//"method": (authMode === DestAuthMode.Subscribe ? "GET" : "POST")
+            "method": 'GET'
+            ,"authMode": authMode
 			,"headers": headers
 			,"url": destination
 			,"originalReq": (originalReq ? originalReq : null)
