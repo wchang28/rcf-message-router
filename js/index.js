@@ -138,8 +138,12 @@ function getDestinationAuthReqRes(req, res) {
 exports.getDestinationAuthReqRes = getDestinationAuthReqRes;
 function authorizeDestination(authMode, destination, headers, authApp, originalReq, done) {
     if (authApp) {
+        if (authMode == DestAuthMode.Subscribe)
+            console.log('<<SUBSCRIBE>>');
+        else
+            console.log('<<SEND>>');
         var req = {
-            "method": (authMode === DestAuthMode.Subscribe ? "GET" : "POST"),
+            "method": (authMode == DestAuthMode.Subscribe ? "GET" : "POST"),
             "authMode": authMode,
             "headers": headers,
             "url": destination,

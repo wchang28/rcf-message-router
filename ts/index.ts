@@ -180,8 +180,12 @@ export function getDestinationAuthReqRes(req: express.Request, res: express.Resp
 
 function authorizeDestination(authMode: DestAuthMode, destination: string, headers:{[field: string]: any}, authApp:any, originalReq: express.Request, done: (err:any) => void) {
 	if (authApp) {
+        if (authMode == DestAuthMode.Subscribe)
+            console.log('<<SUBSCRIBE>>');
+        else
+            console.log('<<SEND>>');
 		let req = {
-			"method": (authMode === DestAuthMode.Subscribe ? "GET" : "POST")
+			"method": (authMode == DestAuthMode.Subscribe ? "GET" : "POST")
             ,"authMode": authMode
 			,"headers": headers
 			,"url": destination
