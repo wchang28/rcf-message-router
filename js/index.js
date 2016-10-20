@@ -11,7 +11,8 @@ var bodyParser = require('body-parser');
 var _ = require('lodash');
 var topicConnection_1 = require('./topicConnection');
 var defaultOptions = {
-    pingIntervalMS: 10000
+    pingIntervalMS: 10000,
+    dispatchMsgOnSend: true
 };
 // this class emits the following events
 // 1. change
@@ -39,6 +40,10 @@ var ConnectionsManager = (function (_super) {
         this.emit('change');
         return conn_id;
     };
+    ConnectionsManager.prototype.validConnection = function (conn_id) {
+        var conn = this.__connections[conn_id];
+        return (conn ? true : false);
+    };
     ConnectionsManager.prototype.removeConnection = function (conn_id) {
         var conn = this.__connections[conn_id];
         if (conn) {
@@ -55,7 +60,7 @@ var ConnectionsManager = (function (_super) {
         }
         else {
             if (typeof done === 'function')
-                done('bad connection');
+                done(ConnectionsManager.MSG_BAD_CONN);
         }
     };
     ConnectionsManager.prototype.removeSubscription = function (conn_id, sub_id, done) {
@@ -65,10 +70,10 @@ var ConnectionsManager = (function (_super) {
         }
         else {
             if (typeof done === 'function')
-                done('bad connection');
+                done(ConnectionsManager.MSG_BAD_CONN);
         }
     };
-    ConnectionsManager.prototype.injectMessage = function (destination, headers, message, done) {
+    ConnectionsManager.prototype.dispatchMessage = function (destination, headers, message, done) {
         var left = this.connCount;
         var errs = [];
         for (var id in this.__connections) {
@@ -87,11 +92,11 @@ var ConnectionsManager = (function (_super) {
     ConnectionsManager.prototype.forwardMessage = function (conn_id, destination, headers, message, done) {
         var conn = this.__connections[conn_id];
         if (conn) {
-            this.injectMessage(destination, headers, message, done);
+            this.dispatchMessage(destination, headers, message, done);
         }
         else {
             if (typeof done === 'function')
-                done('bad connection');
+                done(ConnectionsManager.MSG_BAD_CONN);
         }
     };
     ConnectionsManager.prototype.toJSON = function () {
@@ -102,9 +107,53 @@ var ConnectionsManager = (function (_super) {
         }
         return ret;
     };
+    ConnectionsManager.MSG_BAD_CONN = "bad connection";
     return ConnectionsManager;
 }(events.EventEmitter));
 exports.ConnectionsManager = ConnectionsManager;
+function getRemoteAddress(req) {
+    return req.connection.remoteAddress + ':' + req.connection.remotePort.toString();
+}
+;
+;
+;
+function getDestinationAuthReqRes(req, res) {
+    var authReq = req;
+    var authRes = res;
+    return { authReq: authReq, authRes: authRes };
+}
+exports.getDestinationAuthReqRes = getDestinationAuthReqRes;
+function authorizeDestination(destination, headers, authApp, originalReq, done) {
+    var _this = this;
+    if (authApp) {
+        var req = {
+            "method": "GET",
+            "headers": headers,
+            "url": destination,
+            "originalReq": (originalReq ? originalReq : null)
+        };
+        var res_1 = {
+            '___err___': null,
+            'setHeader': function (fld, value) { },
+            'reject': function (err) {
+                _this.___err___ = err;
+                finalHandler_1();
+            },
+            'accept': function () {
+                _this.___err___ = null;
+                finalHandler_1();
+            },
+            'get_err': function () { return _this.___err___; }
+        };
+        var finalHandler_1 = function () {
+            done(res_1.get_err());
+        };
+        authApp(req, res_1, finalHandler_1);
+    }
+    else {
+        done(null);
+    }
+}
 function getRouter(eventPath, options) {
     options = options || defaultOptions;
     options = _.assignIn({}, defaultOptions, options);
@@ -116,7 +165,7 @@ function getRouter(eventPath, options) {
     // server side events streaming
     router.get(eventPath, function (req, res) {
         var cookie = (options.cookieSetter ? options.cookieSetter(req) : null);
-        var remoteAddress = req.connection.remoteAddress + ':' + req.connection.remotePort.toString();
+        var remoteAddress = getRemoteAddress(req);
         var ep = { req: req, remoteAddress: remoteAddress };
         router.eventEmitter.emit('sse_connect', ep); // fire the "sse_connect" event
         // init SSE
@@ -156,44 +205,54 @@ function getRouter(eventPath, options) {
         });
     });
     router.post(eventPath + '/subscribe', function (req, res) {
-        var remoteAddress = req.connection.remoteAddress + ':' + req.connection.remotePort.toString();
+        var remoteAddress = getRemoteAddress(req);
         var data = req.body;
         var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'subscribe', data: data };
         router.eventEmitter.emit('client_cmd', cep);
-        connectionsManager.addSubscription(data.conn_id, data.sub_id, data.destination, data.headers, function (err) {
-            if (err) {
-                res.jsonp({ exception: JSON.parse(JSON.stringify(err)) });
-            }
+        authorizeDestination(data.destination, data.headers, options.destinationAuthorizeApp, req, function (err) {
+            if (err)
+                res.status(403).json({ exception: JSON.parse(JSON.stringify(err)) });
             else {
-                res.jsonp({});
+                connectionsManager.addSubscription(data.conn_id, data.sub_id, data.destination, data.headers, function (err) {
+                    if (err)
+                        res.status(400).json({ exception: JSON.parse(JSON.stringify(err)) });
+                    else
+                        res.jsonp({});
+                });
             }
         });
     });
     router.get(eventPath + '/unsubscribe', function (req, res) {
-        var remoteAddress = req.connection.remoteAddress + ':' + req.connection.remotePort.toString();
+        var remoteAddress = getRemoteAddress(req);
         var data = req.query;
         var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'unsubscribe', data: data };
         router.eventEmitter.emit('client_cmd', cep);
         connectionsManager.removeSubscription(data.conn_id, data.sub_id, function (err) {
-            if (err) {
-                res.jsonp({ exception: JSON.parse(JSON.stringify(err)) });
-            }
-            else {
+            if (err)
+                res.status(400).json({ exception: JSON.parse(JSON.stringify(err)) });
+            else
                 res.jsonp({});
-            }
         });
     });
     router.post(eventPath + '/send', function (req, res) {
-        var remoteAddress = req.connection.remoteAddress + ':' + req.connection.remotePort.toString();
+        var remoteAddress = getRemoteAddress(req);
         var data = req.body;
         var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'send', data: data };
         router.eventEmitter.emit('client_cmd', cep);
-        connectionsManager.forwardMessage(data.conn_id, data.destination, data.headers, data.body, function (err) {
-            if (err) {
-                res.jsonp({ exception: JSON.parse(JSON.stringify(err)) });
-            }
+        authorizeDestination(data.destination, data.headers, options.destinationAuthorizeApp, req, function (err) {
+            if (err)
+                res.status(403).json({ exception: JSON.parse(JSON.stringify(err)) });
             else {
-                res.jsonp({});
+                if (options.dispatchMsgOnSend) {
+                    connectionsManager.forwardMessage(data.conn_id, data.destination, data.headers, data.body, function (err) {
+                        if (err)
+                            res.status(400).json({ exception: JSON.parse(JSON.stringify(err)) });
+                        else
+                            res.jsonp({});
+                    });
+                }
+                else
+                    res.jsonp({});
             }
         });
     });

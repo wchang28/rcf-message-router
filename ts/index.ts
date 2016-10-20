@@ -7,16 +7,19 @@ import * as _ from 'lodash';
 import {TopicConnection} from './topicConnection';
 
 export interface CookieSetter {
-    (req: any): any;
+    (req: express.Request): any;
 }
 
 export interface Options {
     pingIntervalMS?: number
     cookieSetter?: CookieSetter;
+    dispatchMsgOnSend?: boolean;
+    destinationAuthorizeApp?: express.Express;
 }
 
 let defaultOptions: Options = {
 	pingIntervalMS: 10000
+    ,dispatchMsgOnSend: true
 }
 
 // this class emits the following events
@@ -24,6 +27,7 @@ let defaultOptions: Options = {
 export class ConnectionsManager extends events.EventEmitter {
     private connCount: number;
     private __connections : {[conn_id: string]: TopicConnection;}
+    private static MSG_BAD_CONN = "bad connection";
     constructor() {
         super();
         this.connCount = 0;
@@ -41,6 +45,10 @@ export class ConnectionsManager extends events.EventEmitter {
         this.emit('change');
         return conn_id;
     }
+    validConnection(conn_id: string) : boolean {
+        let conn = this.__connections[conn_id];
+        return (conn ? true : false);
+    }
     removeConnection(conn_id: string) : void {
         let conn = this.__connections[conn_id];
         if (conn) {
@@ -55,7 +63,7 @@ export class ConnectionsManager extends events.EventEmitter {
         if (conn) {
             conn.addSubscription(sub_id, destination, headers, done);
         } else {
-            if (typeof done === 'function') done('bad connection');
+            if (typeof done === 'function') done(ConnectionsManager.MSG_BAD_CONN);
         }
     }
     removeSubscription(conn_id: string, sub_id:string, done?: rcf.DoneHandler) {
@@ -63,10 +71,10 @@ export class ConnectionsManager extends events.EventEmitter {
         if (conn) {
             conn.removeSubscription(sub_id, done);
         } else {
-            if (typeof done === 'function') done('bad connection');
+            if (typeof done === 'function') done(ConnectionsManager.MSG_BAD_CONN);
         }        
     }
-    injectMessage(destination: string, headers: {[field: string]:any}, message:any, done?: rcf.DoneHandler) {
+    dispatchMessage(destination: string, headers: {[field: string]:any}, message:any, done?: rcf.DoneHandler) {
         let left = this.connCount;
         let errs = [];
         for (let id in this.__connections) {    // for each connection
@@ -83,9 +91,9 @@ export class ConnectionsManager extends events.EventEmitter {
     forwardMessage(conn_id: string, destination: string, headers: {[field: string]:any}, message:any, done?: rcf.DoneHandler) {
         let conn = this.__connections[conn_id];
         if (conn) {
-            this.injectMessage(destination, headers, message, done);
+            this.dispatchMessage(destination, headers, message, done);
         } else {
-            if (typeof done === 'function') done('bad connection');
+            if (typeof done === 'function') done(ConnectionsManager.MSG_BAD_CONN);
         }      
     }
     toJSON() : Object {
@@ -121,6 +129,63 @@ export interface CommandEventParams extends ConnectedEventParams {
     data: any;
 }
 
+function getRemoteAddress(req: express.Request) : string {
+    return req.connection.remoteAddress+':'+req.connection.remotePort.toString();
+}
+
+export interface IDestAuthRequest {
+    headers:{[field: string]: any};
+    url: string;
+    path: string;
+    originalReq: express.Request;
+};
+
+export interface IDestAuthResponse {
+    reject: (err: any) => void;
+    accept: () => void;
+};
+
+export interface IDestAuthReqRes {
+    authReq: IDestAuthRequest;
+    authRes: IDestAuthResponse;
+};
+
+export function getDestinationAuthReqRes(req: express.Request, res: express.Response) : IDestAuthReqRes {
+    let authReq: any = req;
+    let authRes: any = res;
+    return {authReq, authRes};
+}
+
+function authorizeDestination(destination: string, headers:{[field: string]: any}, authApp:any, originalReq: express.Request, done: (err:any) => void) {
+	if (authApp) {
+		let req = {
+			"method": "GET"
+			,"headers": headers
+			,"url": destination
+			,"originalReq": (originalReq ? originalReq : null)
+		};
+		let res = {
+			'___err___': null
+			,'setHeader': (fld, value) => {}
+			,'reject': (err: any) => {
+				this.___err___ = err;
+				finalHandler();
+			}
+			,'accept': () => {
+				this.___err___ = null;
+				finalHandler();
+			}
+			,'get_err': () => {return this.___err___;}
+		};
+        let finalHandler = () => {
+            done(res.get_err());
+        };
+		authApp(req, res, finalHandler);
+	} else {
+		done(null);
+	}
+}
+
 export function getRouter(eventPath: string, options?: Options) : ISSETopicRouter {
     options = options || defaultOptions;
     options = _.assignIn({}, defaultOptions, options);
@@ -134,7 +199,7 @@ export function getRouter(eventPath: string, options?: Options) : ISSETopicRoute
     // server side events streaming
     router.get(eventPath, (req: express.Request, res: SSEResponse) => {
         let cookie = (options.cookieSetter ? options.cookieSetter(req) : null);
-        let remoteAddress = req.connection.remoteAddress+':'+req.connection.remotePort.toString();
+        let remoteAddress = getRemoteAddress(req);
         let ep: EventParams = {req, remoteAddress};
 
         router.eventEmitter.emit('sse_connect', ep);    // fire the "sse_connect" event
@@ -180,44 +245,56 @@ export function getRouter(eventPath: string, options?: Options) : ISSETopicRoute
     });
     
     router.post(eventPath + '/subscribe', (req: express.Request, res: express.Response) => {
-        let remoteAddress = req.connection.remoteAddress+':'+req.connection.remotePort.toString();
+        let remoteAddress = getRemoteAddress(req);
         let data = req.body;
         let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'subscribe', data};
         router.eventEmitter.emit('client_cmd', cep);
-        connectionsManager.addSubscription(data.conn_id, data.sub_id, data.destination, data.headers, (err: any) => {
-            if (err) {
-                res.jsonp({exception: JSON.parse(JSON.stringify(err))});
-            } else {
-                res.jsonp({});
+        authorizeDestination(data.destination, data.headers, options.destinationAuthorizeApp, req, (err:any) => {
+            if (err)
+                res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
+            else {
+                connectionsManager.addSubscription(data.conn_id, data.sub_id, data.destination, data.headers, (err: any) => {
+                    if (err)
+                        res.status(400).json({exception: JSON.parse(JSON.stringify(err))});
+                    else
+                        res.jsonp({});
+                });
             }
         });
     });
 
     router.get(eventPath + '/unsubscribe', (req: express.Request, res: express.Response) => {
-        let remoteAddress = req.connection.remoteAddress+':'+req.connection.remotePort.toString();
+        let remoteAddress = getRemoteAddress(req);
         let data = req.query;
         let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'unsubscribe', data};
         router.eventEmitter.emit('client_cmd', cep);
         connectionsManager.removeSubscription(data.conn_id, data.sub_id, (err: any) => {
-            if (err) {
-                res.jsonp({exception: JSON.parse(JSON.stringify(err))});
-            } else {
+            if (err)
+                res.status(400).json({exception: JSON.parse(JSON.stringify(err))});
+            else
                 res.jsonp({});
-            }       
         });
     });
 
     router.post(eventPath + '/send', (req: express.Request, res: express.Response) => {
-        let remoteAddress = req.connection.remoteAddress+':'+req.connection.remotePort.toString();
+        let remoteAddress = getRemoteAddress(req);
         let data = req.body;
         let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'send', data};
         router.eventEmitter.emit('client_cmd', cep);
-        connectionsManager.forwardMessage(data.conn_id, data.destination, data.headers, data.body, (err: any) => {
-            if (err) {
-                res.jsonp({exception: JSON.parse(JSON.stringify(err))});
-            } else {
-                res.jsonp({});
-            }          
+        authorizeDestination(data.destination, data.headers, options.destinationAuthorizeApp, req, (err:any) => {
+            if (err)
+                res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
+            else {
+                if (options.dispatchMsgOnSend) {
+                    connectionsManager.forwardMessage(data.conn_id, data.destination, data.headers, data.body, (err: any) => {
+                        if (err)
+                            res.status(400).json({exception: JSON.parse(JSON.stringify(err))});
+                        else
+                            res.jsonp({});
+                    });
+                } else
+                    res.jsonp({});
+            }
         });
     });
     
