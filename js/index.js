@@ -12,7 +12,7 @@ var _ = require('lodash');
 var topicConnection_1 = require('./topicConnection');
 var defaultOptions = {
     pingIntervalMS: 10000,
-    dispatchMsgOnSend: true
+    dispatchMsgOnClientSend: true
 };
 // this class emits the following events
 // 1. change
@@ -154,6 +154,13 @@ function authorizeDestination(destination, headers, authApp, originalReq, done) 
         done(null);
     }
 }
+// router.eventEmitter emit the following events
+// 1. sse_connect (EventParams)
+// 2. sse_disconnect (EventParams)
+// 3. client_connect (ConnectedEventParams)
+// 4. client_disconnect (ConnectedEventParams)
+// 5. client_cmd (CommandEventParams)
+// 6. on_client_send_msg (ClientSendMsgEventParams)
 function getRouter(eventPath, options) {
     options = options || defaultOptions;
     options = _.assignIn({}, defaultOptions, options);
@@ -243,7 +250,9 @@ function getRouter(eventPath, options) {
             if (err)
                 res.status(403).json({ exception: JSON.parse(JSON.stringify(err)) });
             else {
-                if (options.dispatchMsgOnSend) {
+                var ev = { destination: data.destination, headers: data.headers, body: data.body };
+                router.eventEmitter.emit('on_client_send_msg', ev);
+                if (options.dispatchMsgOnClientSend) {
                     connectionsManager.forwardMessage(data.conn_id, data.destination, data.headers, data.body, function (err) {
                         if (err)
                             res.status(400).json({ exception: JSON.parse(JSON.stringify(err)) });

@@ -9,7 +9,7 @@ export interface CookieSetter {
 export interface Options {
     pingIntervalMS?: number;
     cookieSetter?: CookieSetter;
-    dispatchMsgOnSend?: boolean;
+    dispatchMsgOnClientSend?: boolean;
     destinationAuthorizeApp?: express.Express;
 }
 export declare class ConnectionsManager extends events.EventEmitter {
@@ -45,8 +45,15 @@ export interface ConnectedEventParams extends EventParams {
     conn_id: string;
 }
 export interface CommandEventParams extends ConnectedEventParams {
-    cmd: string;
+    cmd: "subscribe" | "unsubscribe" | "send";
     data: any;
+}
+export interface ClientSendMsgEventParams {
+    destination: string;
+    headers: {
+        [field: string]: any;
+    };
+    body: any;
 }
 export interface IDestAuthRequest {
     headers: {

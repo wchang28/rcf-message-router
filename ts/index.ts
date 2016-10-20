@@ -13,13 +13,13 @@ export interface CookieSetter {
 export interface Options {
     pingIntervalMS?: number
     cookieSetter?: CookieSetter;
-    dispatchMsgOnSend?: boolean;
+    dispatchMsgOnClientSend?: boolean;
     destinationAuthorizeApp?: express.Express;
 }
 
 let defaultOptions: Options = {
 	pingIntervalMS: 10000
-    ,dispatchMsgOnSend: true
+    ,dispatchMsgOnClientSend: true
 }
 
 // this class emits the following events
@@ -125,8 +125,14 @@ export interface ConnectedEventParams extends EventParams {
 }
 
 export interface CommandEventParams extends ConnectedEventParams {
-    cmd: string;
+    cmd: "subscribe" | "unsubscribe" | "send";
     data: any;
+}
+
+export interface ClientSendMsgEventParams {
+    destination: string;
+    headers: {[field: string]: any};
+    body: any;
 }
 
 function getRemoteAddress(req: express.Request) : string {
@@ -186,6 +192,13 @@ function authorizeDestination(destination: string, headers:{[field: string]: any
 	}
 }
 
+// router.eventEmitter emit the following events
+// 1. sse_connect (EventParams)
+// 2. sse_disconnect (EventParams)
+// 3. client_connect (ConnectedEventParams)
+// 4. client_disconnect (ConnectedEventParams)
+// 5. client_cmd (CommandEventParams)
+// 6. on_client_send_msg (ClientSendMsgEventParams)
 export function getRouter(eventPath: string, options?: Options) : ISSETopicRouter {
     options = options || defaultOptions;
     options = _.assignIn({}, defaultOptions, options);
@@ -285,7 +298,9 @@ export function getRouter(eventPath: string, options?: Options) : ISSETopicRoute
             if (err)
                 res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
             else {
-                if (options.dispatchMsgOnSend) {
+                let ev: ClientSendMsgEventParams = {destination: data.destination, headers: data.headers, body: data.body};
+                router.eventEmitter.emit('on_client_send_msg', ev);
+                if (options.dispatchMsgOnClientSend) {
                     connectionsManager.forwardMessage(data.conn_id, data.destination, data.headers, data.body, (err: any) => {
                         if (err)
                             res.status(400).json({exception: JSON.parse(JSON.stringify(err))});
