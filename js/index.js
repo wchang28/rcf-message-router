@@ -114,6 +114,11 @@ exports.ConnectionsManager = ConnectionsManager;
 function getRemoteAddress(req) {
     return req.connection.remoteAddress + ':' + req.connection.remotePort.toString();
 }
+(function (DestAuthMode) {
+    DestAuthMode[DestAuthMode["Subscribe"] = 0] = "Subscribe";
+    DestAuthMode[DestAuthMode["SendMsg"] = 1] = "SendMsg";
+})(exports.DestAuthMode || (exports.DestAuthMode = {}));
+var DestAuthMode = exports.DestAuthMode;
 ;
 ;
 ;
@@ -123,11 +128,11 @@ function getDestinationAuthReqRes(req, res) {
     return { authReq: authReq, authRes: authRes };
 }
 exports.getDestinationAuthReqRes = getDestinationAuthReqRes;
-function authorizeDestination(destination, headers, authApp, originalReq, done) {
-    var _this = this;
+function authorizeDestination(authMode, destination, headers, authApp, originalReq, done) {
     if (authApp) {
         var req = {
-            "method": "GET",
+            "method": (authMode === DestAuthMode.Subscribe ? "GET" : "POST"),
+            'authMode': authMode,
             "headers": headers,
             "url": destination,
             "originalReq": (originalReq ? originalReq : null)
@@ -136,14 +141,14 @@ function authorizeDestination(destination, headers, authApp, originalReq, done) 
             '___err___': null,
             'setHeader': function (fld, value) { },
             'reject': function (err) {
-                _this.___err___ = err;
+                this.___err___ = err;
                 finalHandler_1();
             },
             'accept': function () {
-                _this.___err___ = null;
+                this.___err___ = null;
                 finalHandler_1();
             },
-            'get_err': function () { return _this.___err___; }
+            'get_err': function () { return this.___err___; }
         };
         var finalHandler_1 = function () {
             done(res_1.get_err());
@@ -216,7 +221,7 @@ function getRouter(eventPath, options) {
         var data = req.body;
         var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'subscribe', data: data };
         router.eventEmitter.emit('client_cmd', cep);
-        authorizeDestination(data.destination, data.headers, options.destinationAuthorizeApp, req, function (err) {
+        authorizeDestination(DestAuthMode.Subscribe, data.destination, data.headers, options.destinationAuthorizeApp, req, function (err) {
             if (err)
                 res.status(403).json({ exception: JSON.parse(JSON.stringify(err)) });
             else {
@@ -246,7 +251,7 @@ function getRouter(eventPath, options) {
         var data = req.body;
         var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'send', data: data };
         router.eventEmitter.emit('client_cmd', cep);
-        authorizeDestination(data.destination, data.headers, options.destinationAuthorizeApp, req, function (err) {
+        authorizeDestination(DestAuthMode.SendMsg, data.destination, data.headers, options.destinationAuthorizeApp, req, function (err) {
             if (err)
                 res.status(403).json({ exception: JSON.parse(JSON.stringify(err)) });
             else {

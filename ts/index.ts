@@ -139,7 +139,13 @@ function getRemoteAddress(req: express.Request) : string {
     return req.connection.remoteAddress+':'+req.connection.remotePort.toString();
 }
 
+export enum DestAuthMode {
+    Subscribe = 0
+    ,SendMsg = 1
+}
+
 export interface IDestAuthRequest {
+    authMode: DestAuthMode;
     headers:{[field: string]: any};
     url: string;
     path: string;
@@ -162,26 +168,27 @@ export function getDestinationAuthReqRes(req: express.Request, res: express.Resp
     return {authReq, authRes};
 }
 
-function authorizeDestination(destination: string, headers:{[field: string]: any}, authApp:any, originalReq: express.Request, done: (err:any) => void) {
+function authorizeDestination(authMode: DestAuthMode, destination: string, headers:{[field: string]: any}, authApp:any, originalReq: express.Request, done: (err:any) => void) {
 	if (authApp) {
 		let req = {
-			"method": "GET"
+			"method": (authMode === DestAuthMode.Subscribe ? "GET" : "POST")
+            ,'authMode': authMode
 			,"headers": headers
 			,"url": destination
 			,"originalReq": (originalReq ? originalReq : null)
 		};
 		let res = {
 			'___err___': null
-			,'setHeader': (fld, value) => {}
-			,'reject': (err: any) => {
+			,'setHeader': function (fld, value) {}
+			,'reject': function (err: any) {
 				this.___err___ = err;
 				finalHandler();
 			}
-			,'accept': () => {
+			,'accept': function() {
 				this.___err___ = null;
 				finalHandler();
 			}
-			,'get_err': () => {return this.___err___;}
+			,'get_err': function() {return this.___err___;}
 		};
         let finalHandler = () => {
             done(res.get_err());
@@ -262,7 +269,7 @@ export function getRouter(eventPath: string, options?: Options) : ISSETopicRoute
         let data = req.body;
         let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'subscribe', data};
         router.eventEmitter.emit('client_cmd', cep);
-        authorizeDestination(data.destination, data.headers, options.destinationAuthorizeApp, req, (err:any) => {
+        authorizeDestination(DestAuthMode.Subscribe, data.destination, data.headers, options.destinationAuthorizeApp, req, (err:any) => {
             if (err)
                 res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
             else {
@@ -294,7 +301,7 @@ export function getRouter(eventPath: string, options?: Options) : ISSETopicRoute
         let data = req.body;
         let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'send', data};
         router.eventEmitter.emit('client_cmd', cep);
-        authorizeDestination(data.destination, data.headers, options.destinationAuthorizeApp, req, (err:any) => {
+        authorizeDestination(DestAuthMode.SendMsg, data.destination, data.headers, options.destinationAuthorizeApp, req, (err:any) => {
             if (err)
                 res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
             else {

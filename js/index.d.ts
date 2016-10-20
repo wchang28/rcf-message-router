@@ -55,7 +55,12 @@ export interface ClientSendMsgEventParams {
     };
     body: any;
 }
+export declare enum DestAuthMode {
+    Subscribe = 0,
+    SendMsg = 1,
+}
 export interface IDestAuthRequest {
+    authMode: DestAuthMode;
     headers: {
         [field: string]: any;
     };
