@@ -89,16 +89,6 @@ var ConnectionsManager = (function (_super) {
             });
         }
     };
-    ConnectionsManager.prototype.forwardMessage = function (conn_id, destination, headers, message, done) {
-        var conn = this.__connections[conn_id];
-        if (conn) {
-            this.dispatchMessage(destination, headers, message, done);
-        }
-        else {
-            if (typeof done === 'function')
-                done(ConnectionsManager.MSG_BAD_CONN);
-        }
-    };
     ConnectionsManager.prototype.toJSON = function () {
         var ret = [];
         for (var conn_id in this.__connections) {
@@ -263,24 +253,29 @@ function getRouter(eventPath, options) {
         var data = req.body;
         var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'send', data: data };
         router.eventEmitter.emit('client_cmd', cep);
-        authorizeDestination(DestAuthMode.SendMsg, data.destination, data.headers, data.body, options.destinationAuthorizeApp, req, function (err) {
-            if (err)
-                res.status(403).json({ exception: JSON.parse(JSON.stringify(err)) });
-            else {
-                var ev = { destination: data.destination, headers: data.headers, body: data.body };
-                router.eventEmitter.emit('on_client_send_msg', ev);
-                if (options.dispatchMsgOnClientSend) {
-                    connectionsManager.forwardMessage(data.conn_id, data.destination, data.headers, data.body, function (err) {
-                        if (err)
-                            res.status(400).json({ exception: JSON.parse(JSON.stringify(err)) });
-                        else
-                            res.jsonp({});
-                    });
+        if (connectionsManager.validConnection(data.conn_id)) {
+            authorizeDestination(DestAuthMode.SendMsg, data.destination, data.headers, data.body, options.destinationAuthorizeApp, req, function (err) {
+                if (err)
+                    res.status(403).json({ exception: JSON.parse(JSON.stringify(err)) });
+                else {
+                    var ev = { req: req, conn_id: data.conn_id, destination: data.destination, headers: data.headers, body: data.body };
+                    router.eventEmitter.emit('on_client_send_msg', ev);
+                    if (options.dispatchMsgOnClientSend) {
+                        connectionsManager.dispatchMessage(data.destination, data.headers, data.body, function (err) {
+                            if (err)
+                                res.status(400).json({ exception: JSON.parse(JSON.stringify(err)) });
+                            else
+                                res.jsonp({});
+                        });
+                    }
+                    else
+                        res.jsonp({});
                 }
-                else
-                    res.jsonp({});
-            }
-        });
+            });
+        }
+        else {
+            res.status(400).json({ exception: ConnectionsManager.MSG_BAD_CONN });
+        }
     });
     return router;
 }

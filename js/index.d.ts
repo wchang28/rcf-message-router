@@ -15,7 +15,7 @@ export interface Options {
 export declare class ConnectionsManager extends events.EventEmitter {
     private connCount;
     private __connections;
-    private static MSG_BAD_CONN;
+    static MSG_BAD_CONN: string;
     constructor();
     readonly ConnectionsCount: number;
     createConnection(remoteAddress: string, cookie: any, messageCB: rcf.MessageCallback, pingIntervalMS: number): string;
@@ -26,9 +26,6 @@ export declare class ConnectionsManager extends events.EventEmitter {
     }, done?: rcf.DoneHandler): void;
     removeSubscription(conn_id: string, sub_id: string, done?: rcf.DoneHandler): void;
     dispatchMessage(destination: string, headers: {
-        [field: string]: any;
-    }, message: any, done?: rcf.DoneHandler): void;
-    forwardMessage(conn_id: string, destination: string, headers: {
         [field: string]: any;
     }, message: any, done?: rcf.DoneHandler): void;
     toJSON(): Object;
@@ -49,6 +46,8 @@ export interface CommandEventParams extends ConnectedEventParams {
     data: any;
 }
 export interface ClientSendMsgEventParams {
+    req: express.Request;
+    conn_id: string;
     destination: string;
     headers: {
         [field: string]: any;
