@@ -173,7 +173,7 @@ function authorizeDestination(authApp:any, authMode: DestAuthMode, conn_id: stri
         // construct artifical req and res objects for the destination auth. express app to route
         //////////////////////////////////////////////////////////////////////////////////////////
 		let req = {
-			"method": (authMode == DestAuthMode.Subscribe ? "GET" : "POST")
+			"method": "GET"
             ,"conn_id": conn_id
             ,"authMode": authMode
             ,"headers": headers
@@ -196,24 +196,20 @@ function authorizeDestination(authApp:any, authMode: DestAuthMode, conn_id: stri
             }
 		};
 		let res = {
-            '___responded___': false
-			,'setHeader': (fld, value) => {}
+			'setHeader': (fld, value) => {}
 			,'reject': function(err) {
                 console.log("\n << reject() >> \n");
-                this.___responded___ = true;
                 done(err);
             }
 			,'accept': function () {
                 console.log("\n << accept() >> \n");
-                this.___responded___ = true;
                 done(null);
             }
 		};
         //////////////////////////////////////////////////////////////////////////////////////////
         let finalHandler = () => {
-            console.log("\n << in finalHandler() >> \n");
-            if (!res.___responded___)
-                done("destination not authorized");
+            console.log("\n << finalHandler() >> \n");
+            done("destination not authorized");
         }
 		authApp(req, res, finalHandler);    // route it
 	} else {
