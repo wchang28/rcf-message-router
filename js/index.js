@@ -272,9 +272,11 @@ function getRouter(eventPath, options) {
                 else {
                     console.log("I am here 1");
                     var ev = { req: req, conn_id: data.conn_id, destination: data.destination, headers: data.headers, body: data.body };
-                    router.eventEmitter.emit('on_client_send_msg', ev);
                     console.log("I am here 2");
+                    router.eventEmitter.emit('on_client_send_msg', ev);
+                    console.log("I am here 3");
                     if (options.dispatchMsgOnClientSend) {
+                        console.log("I am here 4");
                         connectionsManager.dispatchMessage(data.destination, data.headers, data.body, function (err) {
                             if (err)
                                 res.status(400).json({ exception: JSON.parse(JSON.stringify(err)) });
