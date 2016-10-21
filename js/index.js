@@ -118,10 +118,13 @@ function getDestinationAuthReqRes(req, res) {
     return { authReq: authReq, authRes: authRes };
 }
 exports.getDestinationAuthReqRes = getDestinationAuthReqRes;
-function authorizeDestination(authMode, destination, headers, body, authApp, originalReq, done) {
+function authorizeDestination(authApp, authMode, conn_id, destination, headers, body, originalReq, done) {
     if (authApp) {
+        // construct artifical req and res objects for the destination auth. express app to route
+        //////////////////////////////////////////////////////////////////////////////////////////
         var req = {
             "method": (authMode == DestAuthMode.Subscribe ? "GET" : "POST"),
+            "conn_id": conn_id,
             "authMode": authMode,
             "headers": headers,
             "url": destination,
@@ -130,6 +133,7 @@ function authorizeDestination(authMode, destination, headers, body, authApp, ori
             "toJSON": function () {
                 return {
                     "method": this.method,
+                    "conn_id": this.conn_id,
                     "authMode": this.authMode,
                     "headers": this.headers,
                     "originalUrl": this.originalUrl,
@@ -139,23 +143,16 @@ function authorizeDestination(authMode, destination, headers, body, authApp, ori
                 };
             }
         };
-        var res_1 = {
-            '___err___': null,
+        var res = {
             'setHeader': function (fld, value) { },
-            'reject': function (err) {
-                this.___err___ = err;
-                finalHandler_1();
-            },
-            'accept': function () {
-                this.___err___ = null;
-                finalHandler_1();
-            },
-            'get_err': function () { return this.___err___; }
+            'reject': done,
+            'accept': function () { done(null); }
         };
-        var finalHandler_1 = function () {
-            done(res_1.get_err());
+        //////////////////////////////////////////////////////////////////////////////////////////
+        var finalHandler = function () {
+            done("destination not authorized");
         };
-        authApp(req, res_1, finalHandler_1);
+        authApp(req, res, finalHandler); // route it
     }
     else {
         done(null);
@@ -223,7 +220,7 @@ function getRouter(eventPath, options) {
         var data = req.body;
         var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'subscribe', data: data };
         router.eventEmitter.emit('client_cmd', cep);
-        authorizeDestination(DestAuthMode.Subscribe, data.destination, data.headers, null, options.destinationAuthorizeApp, req, function (err) {
+        authorizeDestination(options.destinationAuthorizeApp, DestAuthMode.Subscribe, data.conn_id, data.destination, data.headers, null, req, function (err) {
             if (err)
                 res.status(403).json({ exception: JSON.parse(JSON.stringify(err)) });
             else {
@@ -254,7 +251,7 @@ function getRouter(eventPath, options) {
         var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'send', data: data };
         router.eventEmitter.emit('client_cmd', cep);
         if (connectionsManager.validConnection(data.conn_id)) {
-            authorizeDestination(DestAuthMode.SendMsg, data.destination, data.headers, data.body, options.destinationAuthorizeApp, req, function (err) {
+            authorizeDestination(options.destinationAuthorizeApp, DestAuthMode.SendMsg, data.conn_id, data.destination, data.headers, data.body, req, function (err) {
                 if (err)
                     res.status(403).json({ exception: JSON.parse(JSON.stringify(err)) });
                 else {

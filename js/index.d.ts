@@ -60,6 +60,7 @@ export declare enum DestAuthMode {
 }
 export interface IDestAuthRequest {
     method: string;
+    conn_id: string;
     authMode: DestAuthMode;
     headers: {
         [field: string]: any;

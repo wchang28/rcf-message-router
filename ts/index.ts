@@ -140,6 +140,7 @@ export enum DestAuthMode {
 
 export interface IDestAuthRequest {
     method: string;
+    conn_id: string;
     authMode: DestAuthMode;
     headers:{[field: string]: any};
     originalUrl: string;
@@ -165,18 +166,22 @@ export function getDestinationAuthReqRes(req: express.Request, res: express.Resp
     return {authReq, authRes};
 }
 
-function authorizeDestination(authMode: DestAuthMode, destination: string, headers:{[field: string]: any}, body:any, authApp:any, originalReq: express.Request, done: (err:any) => void) {
+function authorizeDestination(authApp:any, authMode: DestAuthMode, conn_id: string, destination: string, headers:{[field: string]: any}, body:any, originalReq: express.Request, done: (err:any) => void) {
 	if (authApp) {
+        // construct artifical req and res objects for the destination auth. express app to route
+        //////////////////////////////////////////////////////////////////////////////////////////
 		let req = {
 			"method": (authMode == DestAuthMode.Subscribe ? "GET" : "POST")
+            ,"conn_id": conn_id
             ,"authMode": authMode
-			,"headers": headers
+            ,"headers": headers
 			,"url": destination
 			,"originalReq": (originalReq ? originalReq : null)
             ,"body": (body ? body : null)
             ,"toJSON": function() {
                 return {
                     "method": this.method
+                    ,"conn_id": this.conn_id
                     ,"authMode": this.authMode
                     ,"headers": this.headers
                     ,"originalUrl": this.originalUrl
@@ -187,22 +192,15 @@ function authorizeDestination(authMode: DestAuthMode, destination: string, heade
             }
 		};
 		let res = {
-			'___err___': null
-			,'setHeader': function (fld, value) {}
-			,'reject': function (err: any) {
-				this.___err___ = err;
-				finalHandler();
-			}
-			,'accept': function() {
-				this.___err___ = null;
-				finalHandler();
-			}
-			,'get_err': function() {return this.___err___;}
+			'setHeader': (fld, value) => {}
+			,'reject': done
+			,'accept': () => {done(null);}
 		};
+        //////////////////////////////////////////////////////////////////////////////////////////
         let finalHandler = () => {
-            done(res.get_err());
-        };
-		authApp(req, res, finalHandler);
+            done("destination not authorized");
+        }
+		authApp(req, res, finalHandler);    // route it
 	} else {
 		done(null);
 	}
@@ -278,7 +276,7 @@ export function getRouter(eventPath: string, options?: Options) : ISSETopicRoute
         let data = req.body;
         let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'subscribe', data};
         router.eventEmitter.emit('client_cmd', cep);
-        authorizeDestination(DestAuthMode.Subscribe, data.destination, data.headers, null, options.destinationAuthorizeApp, req, (err:any) => {
+        authorizeDestination(options.destinationAuthorizeApp, DestAuthMode.Subscribe, data.conn_id, data.destination, data.headers, null, req, (err:any) => {
             if (err)
                 res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
             else {
@@ -311,7 +309,7 @@ export function getRouter(eventPath: string, options?: Options) : ISSETopicRoute
         let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'send', data};
         router.eventEmitter.emit('client_cmd', cep);
         if (connectionsManager.validConnection(data.conn_id)) { // make sure the connection is valid
-            authorizeDestination(DestAuthMode.SendMsg, data.destination, data.headers, data.body, options.destinationAuthorizeApp, req, (err:any) => {  // make sure this send is authorized for the destination
+            authorizeDestination(options.destinationAuthorizeApp, DestAuthMode.SendMsg, data.conn_id, data.destination, data.headers, data.body, req, (err:any) => {  // make sure this send is authorized for the destination
                 if (err)
                     res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
                 else {
