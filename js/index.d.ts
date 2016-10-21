@@ -69,6 +69,8 @@ export interface IDestAuthRequest {
     url: string;
     path: string;
     body: any;
+    params: any;
+    query: any;
     originalReq: express.Request;
 }
 export interface IDestAuthResponse {

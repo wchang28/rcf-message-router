@@ -147,6 +147,8 @@ export interface IDestAuthRequest {
     url: string;
     path: string;
     body: any;
+    params: any;
+    query: any;
     originalReq: express.Request;
 };
 
@@ -188,6 +190,8 @@ function authorizeDestination(authApp:any, authMode: DestAuthMode, conn_id: stri
                     ,"url": this.destination
                     ,"path": this.path
                     ,"body": this.body
+                    ,"params": this.params
+                    ,"query": this.query
                 };
             }
 		};

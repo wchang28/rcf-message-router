@@ -139,7 +139,9 @@ function authorizeDestination(authApp, authMode, conn_id, destination, headers, 
                     "originalUrl": this.originalUrl,
                     "url": this.destination,
                     "path": this.path,
-                    "body": this.body
+                    "body": this.body,
+                    "params": this.params,
+                    "query": this.query
                 };
             }
         };
