@@ -46,12 +46,10 @@ var DestinationAuthRouter = (function () {
                 err: null,
                 accept: function () { this.err = null; },
                 reject: function (err) {
-                    console.log('reject(' + err.toString() + ')');
                     this.err = err;
                 }
             };
             handler(req, res);
-            console.log('res.err=' + res.err);
             done(res.err);
         }
         else {
@@ -335,7 +333,7 @@ function getRouter(eventPath, options) {
         var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'send', data: data };
         router.eventEmitter.emit('client_cmd', cep);
         if (connectionsManager.validConnection(data.conn_id)) {
-            authorizeDestination(options.destinationAuthorizeRouter, DestAuthMode.Subscribe, data.conn_id, data.destination, data.headers, data.body, req, function (err) {
+            authorizeDestination(options.destinationAuthorizeRouter, DestAuthMode.SendMsg, data.conn_id, data.destination, data.headers, data.body, req, function (err) {
                 if (err)
                     res.status(403).json({ exception: JSON.parse(JSON.stringify(err)) });
                 else {
