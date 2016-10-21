@@ -285,6 +285,7 @@ export function getRouter(eventPath: string, options?: Options) : ISSETopicRoute
         let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'subscribe', data};
         router.eventEmitter.emit('client_cmd', cep);
         authorizeDestination(options.destinationAuthorizeApp, DestAuthMode.Subscribe, data.conn_id, data.destination, data.headers, null, req, (err:any) => {
+            console.log("<> DONE AUTH SUBSCRIBE <>")
             if (err)
                 res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
             else {
@@ -318,7 +319,7 @@ export function getRouter(eventPath: string, options?: Options) : ISSETopicRoute
         router.eventEmitter.emit('client_cmd', cep);
         if (connectionsManager.validConnection(data.conn_id)) { // make sure the connection is valid
             authorizeDestination(options.destinationAuthorizeApp, DestAuthMode.SendMsg, data.conn_id, data.destination, data.headers, data.body, req, (err:any) => {  // make sure this send is authorized for the destination
-                console.log("<> DONE AUTH <>")
+                console.log("<> DONE AUTH SEND <>")
                 if (err)
                     res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
                 else {
