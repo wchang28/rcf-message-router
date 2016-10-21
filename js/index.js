@@ -10,6 +10,53 @@ var express = require('express');
 var bodyParser = require('body-parser');
 var _ = require('lodash');
 var topicConnection_1 = require('./topicConnection');
+var MyRouter = require('my-router');
+(function (DestAuthMode) {
+    DestAuthMode[DestAuthMode["Subscribe"] = 0] = "Subscribe";
+    DestAuthMode[DestAuthMode["SendMsg"] = 1] = "SendMsg";
+})(exports.DestAuthMode || (exports.DestAuthMode = {}));
+var DestAuthMode = exports.DestAuthMode;
+;
+;
+var DestinationAuthRouter = (function () {
+    function DestinationAuthRouter() {
+        this.mr = new MyRouter();
+    }
+    DestinationAuthRouter.prototype.use = function (destPathPattern, handler) {
+        this.mr.add(destPathPattern, { destPathPattern: destPathPattern, handler: handler });
+    };
+    DestinationAuthRouter.prototype.route = function (conn_id, destination, authMode, headers, body, originalReq, done) {
+        var ret = this.mr.route(destination);
+        if (ret) {
+            var params = ret.params;
+            var destPathPattern = ret.result.destPathPattern;
+            var handler = ret.result.handler;
+            var req = { conn_id: conn_id, authMode: authMode, headers: headers, destination: destination, body: body, originalReq: originalReq, params: params };
+            req['toJSON'] = function () {
+                return {
+                    conn_id: this.conn_id,
+                    authMode: this.authMode,
+                    headers: this.headers,
+                    destination: this.destination,
+                    body: this.body,
+                    params: this.params
+                };
+            };
+            var res = {
+                err: null,
+                accept: function () { this.err = null; },
+                reject: function (err) { this.err = err; }
+            };
+            handler(req, res);
+            done(res.err);
+        }
+        else {
+            done('destination not authorized');
+        }
+    };
+    return DestinationAuthRouter;
+}());
+exports.DestinationAuthRouter = DestinationAuthRouter;
 var defaultOptions = {
     pingIntervalMS: 10000,
     dispatchMsgOnClientSend: true
@@ -104,11 +151,14 @@ exports.ConnectionsManager = ConnectionsManager;
 function getRemoteAddress(req) {
     return req.connection.remoteAddress + ':' + req.connection.remotePort.toString();
 }
-/*
-export enum DestAuthMode {
-    Subscribe = 0
-    ,SendMsg = 1
+function authorizeDestination(destAuthRouter, authMode, conn_id, destination, headers, body, originalReq, done) {
+    if (destAuthRouter) {
+        destAuthRouter.route(conn_id, destination, authMode, headers, body, originalReq, done);
+    }
+    else
+        done(null);
 }
+/*
 
 export interface IDestAuthRequest {
     method: string;
@@ -122,11 +172,6 @@ export interface IDestAuthRequest {
     params: any;
     query: any;
     originalReq: express.Request;
-};
-
-export interface IDestAuthResponse {
-    reject: (err: any) => void;
-    accept: () => void;
 };
 
 export interface IDestAuthReqRes {
@@ -255,11 +300,17 @@ function getRouter(eventPath, options) {
         var data = req.body;
         var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'subscribe', data: data };
         router.eventEmitter.emit('client_cmd', cep);
-        connectionsManager.addSubscription(data.conn_id, data.sub_id, data.destination, data.headers, function (err) {
+        authorizeDestination(options.destinationAuthorizeApp, DestAuthMode.Subscribe, data.conn_id, data.destination, data.headers, null, req, function (err) {
             if (err)
-                res.status(400).json({ exception: JSON.parse(JSON.stringify(err)) });
-            else
-                res.jsonp({});
+                res.status(403).json({ exception: JSON.parse(JSON.stringify(err)) });
+            else {
+                connectionsManager.addSubscription(data.conn_id, data.sub_id, data.destination, data.headers, function (err) {
+                    if (err)
+                        res.status(400).json({ exception: JSON.parse(JSON.stringify(err)) });
+                    else
+                        res.jsonp({});
+                });
+            }
         });
     });
     router.get(eventPath + '/unsubscribe', function (req, res) {
@@ -280,18 +331,24 @@ function getRouter(eventPath, options) {
         var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'send', data: data };
         router.eventEmitter.emit('client_cmd', cep);
         if (connectionsManager.validConnection(data.conn_id)) {
-            var ev = { req: req, conn_id: data.conn_id, data: { destination: data.destination, headers: data.headers, body: data.body } };
-            router.eventEmitter.emit('on_client_send_msg', ev);
-            if (options.dispatchMsgOnClientSend) {
-                connectionsManager.dispatchMessage(data.destination, data.headers, data.body, function (err) {
-                    if (err)
-                        res.status(400).json({ exception: JSON.parse(JSON.stringify(err)) });
+            authorizeDestination(options.destinationAuthorizeApp, DestAuthMode.Subscribe, data.conn_id, data.destination, data.headers, data.body, req, function (err) {
+                if (err)
+                    res.status(403).json({ exception: JSON.parse(JSON.stringify(err)) });
+                else {
+                    var ev = { req: req, conn_id: data.conn_id, data: { destination: data.destination, headers: data.headers, body: data.body } };
+                    router.eventEmitter.emit('on_client_send_msg', ev);
+                    if (options.dispatchMsgOnClientSend) {
+                        connectionsManager.dispatchMessage(data.destination, data.headers, data.body, function (err) {
+                            if (err)
+                                res.status(400).json({ exception: JSON.parse(JSON.stringify(err)) });
+                            else
+                                res.jsonp({});
+                        });
+                    }
                     else
                         res.jsonp({});
-                });
-            }
-            else
-                res.jsonp({});
+                }
+            });
         }
         else {
             res.status(400).json({ exception: ConnectionsManager.MSG_BAD_CONN });

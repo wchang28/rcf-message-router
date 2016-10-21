@@ -5,6 +5,74 @@ import * as express from 'express';
 import * as bodyParser from 'body-parser';
 import * as _ from 'lodash';
 import {TopicConnection} from './topicConnection';
+import MyRouter = require('my-router');
+
+export enum DestAuthMode {
+    Subscribe = 0
+    ,SendMsg = 1
+}
+
+export interface IDestAuthRequest {
+    conn_id: string;
+    authMode: DestAuthMode;
+    headers:{[field: string]: any};
+    destination: string;
+    body: any;
+    originalReq: express.Request;
+    params?: {[fld:string]:string};
+};
+
+export interface IDestAuthResponse {
+    reject: (err: any) => void;
+    accept: () => void;
+};
+
+export interface IDestAuthRouteHandler {
+    (req:IDestAuthRequest, res: IDestAuthResponse): void;
+}
+
+interface RouteResult {
+    destPathPattern: string;
+    handler: IDestAuthRouteHandler;
+}
+
+export class DestinationAuthRouter {
+    private mr: MyRouter<RouteResult>;
+    constructor() {
+        this.mr = new MyRouter<RouteResult>();
+    }
+    use(destPathPattern:string, handler: IDestAuthRouteHandler) {
+        this.mr.add(destPathPattern, {destPathPattern, handler});
+    }
+    route(conn_id: string, destination: string, authMode: DestAuthMode, headers:{[field: string]: any}, body: any, originalReq:express.Request, done:(err:any) => void): void {
+        let ret = this.mr.route(destination);
+        if (ret) {  // find the destination path
+            let params = ret.params;
+            let destPathPattern = ret.result.destPathPattern;
+            let handler = ret.result.handler;
+            let req: IDestAuthRequest = {conn_id, authMode, headers, destination, body, originalReq, params};
+            req['toJSON'] = function() {
+                return {
+                    conn_id: this.conn_id
+                    ,authMode: this.authMode
+                    ,headers: this.headers
+                    ,destination: this.destination
+                    ,body: this.body
+                    ,params: this.params
+                };
+            };
+            let res = {
+                err: null
+                ,accept: function () {this.err = null;}
+                ,reject: function (err) {this.err = err;}
+            };
+            handler(req, res);
+            done(res.err);
+        } else {
+            done('destination not authorized');
+        }
+    }
+}
 
 export interface CookieSetter {
     (req: express.Request): any;
@@ -14,7 +82,7 @@ export interface Options {
     pingIntervalMS?: number
     cookieSetter?: CookieSetter;
     dispatchMsgOnClientSend?: boolean;
-    //destinationAuthorizeApp?: express.Express;
+    destinationAuthorizeApp?: DestinationAuthRouter;
 }
 
 let defaultOptions: Options = {
@@ -135,11 +203,13 @@ function getRemoteAddress(req: express.Request) : string {
     return req.connection.remoteAddress+':'+req.connection.remotePort.toString();
 }
 
-/*
-export enum DestAuthMode {
-    Subscribe = 0
-    ,SendMsg = 1
+function authorizeDestination(destAuthRouter: DestinationAuthRouter, authMode: DestAuthMode, conn_id: string, destination: string, headers:{[field: string]: any}, body:any, originalReq: express.Request, done: (err:any) => void) {
+    if (destAuthRouter) {
+        destAuthRouter.route(conn_id, destination, authMode, headers, body, originalReq, done);
+    } else
+        done(null);
 }
+/*
 
 export interface IDestAuthRequest {
     method: string;
@@ -153,11 +223,6 @@ export interface IDestAuthRequest {
     params: any;
     query: any;
     originalReq: express.Request;
-};
-
-export interface IDestAuthResponse {
-    reject: (err: any) => void;
-    accept: () => void;
 };
 
 export interface IDestAuthReqRes {
@@ -224,6 +289,7 @@ function authorizeDestination(authApp:any, authMode: DestAuthMode, conn_id: stri
 	}
 }
 */
+
 
 // router.eventEmitter emit the following events
 // 1. sse_connect (EventParams)
@@ -295,11 +361,17 @@ export function getRouter(eventPath: string, options?: Options) : ISSETopicRoute
         let data = req.body;
         let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'subscribe', data};
         router.eventEmitter.emit('client_cmd', cep);
-        connectionsManager.addSubscription(data.conn_id, data.sub_id, data.destination, data.headers, (err: any) => {
+        authorizeDestination(options.destinationAuthorizeApp, DestAuthMode.Subscribe, data.conn_id, data.destination, data.headers, null, req, (err:any) => {
             if (err)
-                res.status(400).json({exception: JSON.parse(JSON.stringify(err))});
-            else
-                res.jsonp({});
+                res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
+            else {
+                connectionsManager.addSubscription(data.conn_id, data.sub_id, data.destination, data.headers, (err: any) => {
+                    if (err)
+                        res.status(400).json({exception: JSON.parse(JSON.stringify(err))});
+                    else
+                        res.jsonp({});
+                });
+            }
         });
     });
 
@@ -322,21 +394,27 @@ export function getRouter(eventPath: string, options?: Options) : ISSETopicRoute
         let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'send', data};
         router.eventEmitter.emit('client_cmd', cep);
         if (connectionsManager.validConnection(data.conn_id)) { // make sure the connection is valid
-            let ev: ClientSendMsgEventParams = {req, conn_id: data.conn_id, data:{destination: data.destination, headers: data.headers, body: data.body}};
-            router.eventEmitter.emit('on_client_send_msg', ev);
-            if (options.dispatchMsgOnClientSend) {
-                connectionsManager.dispatchMessage(data.destination, data.headers, data.body, (err: any) => {
-                    if (err)
-                        res.status(400).json({exception: JSON.parse(JSON.stringify(err))});
-                    else
+            authorizeDestination(options.destinationAuthorizeApp, DestAuthMode.Subscribe, data.conn_id, data.destination, data.headers, data.body, req, (err:any) => {
+                if (err)
+                    res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
+                else {
+                    let ev: ClientSendMsgEventParams = {req, conn_id: data.conn_id, data:{destination: data.destination, headers: data.headers, body: data.body}};
+                    router.eventEmitter.emit('on_client_send_msg', ev);
+                    if (options.dispatchMsgOnClientSend) {
+                        connectionsManager.dispatchMessage(data.destination, data.headers, data.body, (err: any) => {
+                            if (err)
+                                res.status(400).json({exception: JSON.parse(JSON.stringify(err))});
+                            else
+                                res.jsonp({});
+                        });
+                    } else
                         res.jsonp({});
-                });
-            } else
-                res.jsonp({});
+                }
+            });
         } else {
             res.status(400).json({exception: ConnectionsManager.MSG_BAD_CONN});
         }
     });
-    
+
     return router;
 }

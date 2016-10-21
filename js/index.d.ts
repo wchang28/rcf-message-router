@@ -3,6 +3,38 @@
 import * as rcf from 'rcf';
 import * as events from 'events';
 import * as express from 'express';
+export declare enum DestAuthMode {
+    Subscribe = 0,
+    SendMsg = 1,
+}
+export interface IDestAuthRequest {
+    conn_id: string;
+    authMode: DestAuthMode;
+    headers: {
+        [field: string]: any;
+    };
+    destination: string;
+    body: any;
+    originalReq: express.Request;
+    params?: {
+        [fld: string]: string;
+    };
+}
+export interface IDestAuthResponse {
+    reject: (err: any) => void;
+    accept: () => void;
+}
+export interface IDestAuthRouteHandler {
+    (req: IDestAuthRequest, res: IDestAuthResponse): void;
+}
+export declare class DestinationAuthRouter {
+    private mr;
+    constructor();
+    use(destPathPattern: string, handler: IDestAuthRouteHandler): void;
+    route(conn_id: string, destination: string, authMode: DestAuthMode, headers: {
+        [field: string]: any;
+    }, body: any, originalReq: express.Request, done: (err: any) => void): void;
+}
 export interface CookieSetter {
     (req: express.Request): any;
 }
@@ -10,6 +42,7 @@ export interface Options {
     pingIntervalMS?: number;
     cookieSetter?: CookieSetter;
     dispatchMsgOnClientSend?: boolean;
+    destinationAuthorizeApp?: DestinationAuthRouter;
 }
 export declare class ConnectionsManager extends events.EventEmitter {
     private connCount;
