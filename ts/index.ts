@@ -330,8 +330,10 @@ export function getRouter(eventPath: string, options?: Options) : ISSETopicRoute
                 if (err)
                     res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
                 else {
+                    console.log("I am here 1");
                     let ev: ClientSendMsgEventParams = {req, conn_id: data.conn_id, destination: data.destination, headers: data.headers, body: data.body};
                     router.eventEmitter.emit('on_client_send_msg', ev);
+                    console.log("I am here 2");
                     if (options.dispatchMsgOnClientSend) {
                         connectionsManager.dispatchMessage(data.destination, data.headers, data.body, (err: any) => {
                             if (err)
