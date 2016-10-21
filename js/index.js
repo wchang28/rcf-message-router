@@ -145,23 +145,27 @@ function authorizeDestination(authApp, authMode, conn_id, destination, headers, 
                 };
             }
         };
-        var res = {
+        var res_1 = {
+            '___err___': null,
             'setHeader': function (fld, value) { },
             'reject': function (err) {
                 console.log("\n << reject() >> \n");
-                done(err);
+                this.___err___ = err;
+                finalHandler_1();
             },
             'accept': function () {
                 console.log("\n << accept() >> \n");
-                done(null);
-            }
+                this.___err___ = null;
+                finalHandler_1();
+            },
+            'get_err': function () { return this.___err___; }
         };
         //////////////////////////////////////////////////////////////////////////////////////////
-        var finalHandler = function () {
+        var finalHandler_1 = function () {
             console.log("\n << finalHandler() >> \n");
-            done("destination not authorized");
+            done(res_1.get_err());
         };
-        authApp(req, res, finalHandler); // route it
+        authApp(req, res_1, finalHandler_1); // route it
     }
     else {
         done(null);
