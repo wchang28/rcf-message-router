@@ -326,7 +326,7 @@ export function getRouter(eventPath: string, options?: Options) : ISSETopicRoute
         router.eventEmitter.emit('client_cmd', cep);
         if (connectionsManager.validConnection(data.conn_id)) { // make sure the connection is valid
             authorizeDestination(options.destinationAuthorizeApp, DestAuthMode.SendMsg, data.conn_id, data.destination, data.headers, data.body, req, (err:any) => {  // make sure this send is authorized for the destination
-                console.log("<> DONE AUTH SEND <>")
+                console.log("<> DONE AUTH SEND, err="+ JSON.stringify(err) +" <>");
                 if (err)
                     res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
                 else {
