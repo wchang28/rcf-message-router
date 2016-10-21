@@ -14,7 +14,7 @@ export interface Options {
     pingIntervalMS?: number
     cookieSetter?: CookieSetter;
     dispatchMsgOnClientSend?: boolean;
-    destinationAuthorizeApp?: express.Express;
+    //destinationAuthorizeApp?: express.Express;
 }
 
 let defaultOptions: Options = {
@@ -124,15 +124,18 @@ export interface CommandEventParams extends ConnectedEventParams {
 export interface ClientSendMsgEventParams {
     req: express.Request;
     conn_id: string;
-    destination: string;
-    headers: {[field: string]: any};
-    body: any;
+    data: {
+        destination: string;
+        headers: {[field: string]: any};
+        body: any;
+    };
 }
 
 function getRemoteAddress(req: express.Request) : string {
     return req.connection.remoteAddress+':'+req.connection.remotePort.toString();
 }
 
+/*
 export enum DestAuthMode {
     Subscribe = 0
     ,SendMsg = 1
@@ -220,6 +223,7 @@ function authorizeDestination(authApp:any, authMode: DestAuthMode, conn_id: stri
 		done(null);
 	}
 }
+*/
 
 // router.eventEmitter emit the following events
 // 1. sse_connect (EventParams)
@@ -291,18 +295,11 @@ export function getRouter(eventPath: string, options?: Options) : ISSETopicRoute
         let data = req.body;
         let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'subscribe', data};
         router.eventEmitter.emit('client_cmd', cep);
-        authorizeDestination(options.destinationAuthorizeApp, DestAuthMode.Subscribe, data.conn_id, data.destination, data.headers, null, req, (err:any) => {
-            console.log("<> DONE AUTH SUBSCRIBE <>")
+        connectionsManager.addSubscription(data.conn_id, data.sub_id, data.destination, data.headers, (err: any) => {
             if (err)
-                res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
-            else {
-                connectionsManager.addSubscription(data.conn_id, data.sub_id, data.destination, data.headers, (err: any) => {
-                    if (err)
-                        res.status(400).json({exception: JSON.parse(JSON.stringify(err))});
-                    else
-                        res.jsonp({});
-                });
-            }
+                res.status(400).json({exception: JSON.parse(JSON.stringify(err))});
+            else
+                res.jsonp({});
         });
     });
 
@@ -325,28 +322,17 @@ export function getRouter(eventPath: string, options?: Options) : ISSETopicRoute
         let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'send', data};
         router.eventEmitter.emit('client_cmd', cep);
         if (connectionsManager.validConnection(data.conn_id)) { // make sure the connection is valid
-            authorizeDestination(options.destinationAuthorizeApp, DestAuthMode.SendMsg, data.conn_id, data.destination, data.headers, data.body, req, (err:any) => {  // make sure this send is authorized for the destination
-                console.log("<> DONE AUTH SEND, err="+ JSON.stringify(err) +" <>");
-                if (err)
-                    res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
-                else {
-                    console.log("I am here 1");
-                    let ev: ClientSendMsgEventParams = {req, conn_id: data.conn_id, destination: data.destination, headers: data.headers, body: data.body};
-                    console.log("I am here 2");
-                    router.eventEmitter.emit('on_client_send_msg', ev);
-                    console.log("I am here 3");
-                    if (options.dispatchMsgOnClientSend) {
-                        console.log("I am here 4");
-                        connectionsManager.dispatchMessage(data.destination, data.headers, data.body, (err: any) => {
-                            if (err)
-                                res.status(400).json({exception: JSON.parse(JSON.stringify(err))});
-                            else
-                                res.jsonp({});
-                        });
-                    } else
+            let ev: ClientSendMsgEventParams = {req, conn_id: data.conn_id, data:{destination: data.destination, headers: data.headers, body: data.body}};
+            router.eventEmitter.emit('on_client_send_msg', ev);
+            if (options.dispatchMsgOnClientSend) {
+                connectionsManager.dispatchMessage(data.destination, data.headers, data.body, (err: any) => {
+                    if (err)
+                        res.status(400).json({exception: JSON.parse(JSON.stringify(err))});
+                    else
                         res.jsonp({});
-                }
-            });
+                });
+            } else
+                res.jsonp({});
         } else {
             res.status(400).json({exception: ConnectionsManager.MSG_BAD_CONN});
         }

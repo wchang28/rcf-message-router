@@ -10,7 +10,6 @@ export interface Options {
     pingIntervalMS?: number;
     cookieSetter?: CookieSetter;
     dispatchMsgOnClientSend?: boolean;
-    destinationAuthorizeApp?: express.Express;
 }
 export declare class ConnectionsManager extends events.EventEmitter {
     private connCount;
@@ -48,38 +47,12 @@ export interface CommandEventParams extends ConnectedEventParams {
 export interface ClientSendMsgEventParams {
     req: express.Request;
     conn_id: string;
-    destination: string;
-    headers: {
-        [field: string]: any;
+    data: {
+        destination: string;
+        headers: {
+            [field: string]: any;
+        };
+        body: any;
     };
-    body: any;
 }
-export declare enum DestAuthMode {
-    Subscribe = 0,
-    SendMsg = 1,
-}
-export interface IDestAuthRequest {
-    method: string;
-    conn_id: string;
-    authMode: DestAuthMode;
-    headers: {
-        [field: string]: any;
-    };
-    originalUrl: string;
-    url: string;
-    path: string;
-    body: any;
-    params: any;
-    query: any;
-    originalReq: express.Request;
-}
-export interface IDestAuthResponse {
-    reject: (err: any) => void;
-    accept: () => void;
-}
-export interface IDestAuthReqRes {
-    authReq: IDestAuthRequest;
-    authRes: IDestAuthResponse;
-}
-export declare function getDestinationAuthReqRes(req: express.Request, res: express.Response): IDestAuthReqRes;
 export declare function getRouter(eventPath: string, options?: Options): ISSETopicRouter;

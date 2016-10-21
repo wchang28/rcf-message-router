@@ -104,73 +104,95 @@ exports.ConnectionsManager = ConnectionsManager;
 function getRemoteAddress(req) {
     return req.connection.remoteAddress + ':' + req.connection.remotePort.toString();
 }
-(function (DestAuthMode) {
-    DestAuthMode[DestAuthMode["Subscribe"] = 0] = "Subscribe";
-    DestAuthMode[DestAuthMode["SendMsg"] = 1] = "SendMsg";
-})(exports.DestAuthMode || (exports.DestAuthMode = {}));
-var DestAuthMode = exports.DestAuthMode;
-;
-;
-;
-function getDestinationAuthReqRes(req, res) {
-    var authReq = req;
-    var authRes = res;
-    return { authReq: authReq, authRes: authRes };
+/*
+export enum DestAuthMode {
+    Subscribe = 0
+    ,SendMsg = 1
 }
-exports.getDestinationAuthReqRes = getDestinationAuthReqRes;
-function authorizeDestination(authApp, authMode, conn_id, destination, headers, body, originalReq, done) {
+
+export interface IDestAuthRequest {
+    method: string;
+    conn_id: string;
+    authMode: DestAuthMode;
+    headers:{[field: string]: any};
+    originalUrl: string;
+    url: string;
+    path: string;
+    body: any;
+    params: any;
+    query: any;
+    originalReq: express.Request;
+};
+
+export interface IDestAuthResponse {
+    reject: (err: any) => void;
+    accept: () => void;
+};
+
+export interface IDestAuthReqRes {
+    authReq: IDestAuthRequest;
+    authRes: IDestAuthResponse;
+};
+
+export function getDestinationAuthReqRes(req: express.Request, res: express.Response) : IDestAuthReqRes {
+    let authReq: any = req;
+    let authRes:any = res;
+    return {authReq, authRes};
+}
+
+function authorizeDestination(authApp:any, authMode: DestAuthMode, conn_id: string, destination: string, headers:{[field: string]: any}, body:any, originalReq: express.Request, done: (err:any) => void) {
     if (authApp) {
         // construct artifical req and res objects for the destination auth. express app to route
         //////////////////////////////////////////////////////////////////////////////////////////
-        var req = {
-            "method": "GET",
-            "conn_id": conn_id,
-            "authMode": authMode,
-            "headers": headers,
-            "url": destination,
-            "originalReq": (originalReq ? originalReq : null),
-            "body": (body ? body : null),
-            "toJSON": function () {
+        let req = {
+            "method": "GET"
+            ,"conn_id": conn_id
+            ,"authMode": authMode
+            ,"headers": headers
+            ,"url": destination
+            ,"originalReq": (originalReq ? originalReq : null)
+            ,"body": (body ? body : null)
+            ,"toJSON": function() {
                 return {
-                    "method": this.method,
-                    "conn_id": this.conn_id,
-                    "authMode": this.authMode,
-                    "headers": this.headers,
-                    "originalUrl": this.originalUrl,
-                    "url": this.destination,
-                    "path": this.path,
-                    "body": this.body,
-                    "params": this.params,
-                    "query": this.query
+                    "method": this.method
+                    ,"conn_id": this.conn_id
+                    ,"authMode": this.authMode
+                    ,"headers": this.headers
+                    ,"originalUrl": this.originalUrl
+                    ,"url": this.destination
+                    ,"path": this.path
+                    ,"body": this.body
+                    ,"params": this.params
+                    ,"query": this.query
                 };
             }
         };
-        var res_1 = {
-            '___err___': null,
-            'setHeader': function (fld, value) { },
-            'reject': function (err) {
+        let res = {
+            '___err___': null
+            ,'setHeader': (fld, value) => {}
+            ,'reject': function (err) {
                 console.log("\n << reject() >> \n");
                 this.___err___ = err;
-                finalHandler_1();
-            },
-            'accept': function () {
+                finalHandler();
+            }
+            ,'accept': function () {
                 console.log("\n << accept() >> \n");
                 this.___err___ = null;
-                finalHandler_1();
-            },
-            'get_err': function () { return this.___err___; }
+                finalHandler();
+            }
+            ,'get_err': function() {return this.___err___;}
         };
         //////////////////////////////////////////////////////////////////////////////////////////
-        var finalHandler_1 = function () {
+        let finalHandler = () => {
             console.log("\n << finalHandler() >> \n");
-            done(res_1.get_err());
-        };
-        authApp(req, res_1, finalHandler_1); // route it
-    }
-    else {
+            done(res.get_err());
+        }
+        authApp(req, res, finalHandler);    // route it
+    } else {
         done(null);
     }
 }
+*/
 // router.eventEmitter emit the following events
 // 1. sse_connect (EventParams)
 // 2. sse_disconnect (EventParams)
@@ -233,18 +255,11 @@ function getRouter(eventPath, options) {
         var data = req.body;
         var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'subscribe', data: data };
         router.eventEmitter.emit('client_cmd', cep);
-        authorizeDestination(options.destinationAuthorizeApp, DestAuthMode.Subscribe, data.conn_id, data.destination, data.headers, null, req, function (err) {
-            console.log("<> DONE AUTH SUBSCRIBE <>");
+        connectionsManager.addSubscription(data.conn_id, data.sub_id, data.destination, data.headers, function (err) {
             if (err)
-                res.status(403).json({ exception: JSON.parse(JSON.stringify(err)) });
-            else {
-                connectionsManager.addSubscription(data.conn_id, data.sub_id, data.destination, data.headers, function (err) {
-                    if (err)
-                        res.status(400).json({ exception: JSON.parse(JSON.stringify(err)) });
-                    else
-                        res.jsonp({});
-                });
-            }
+                res.status(400).json({ exception: JSON.parse(JSON.stringify(err)) });
+            else
+                res.jsonp({});
         });
     });
     router.get(eventPath + '/unsubscribe', function (req, res) {
@@ -265,29 +280,18 @@ function getRouter(eventPath, options) {
         var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'send', data: data };
         router.eventEmitter.emit('client_cmd', cep);
         if (connectionsManager.validConnection(data.conn_id)) {
-            authorizeDestination(options.destinationAuthorizeApp, DestAuthMode.SendMsg, data.conn_id, data.destination, data.headers, data.body, req, function (err) {
-                console.log("<> DONE AUTH SEND, err=" + JSON.stringify(err) + " <>");
-                if (err)
-                    res.status(403).json({ exception: JSON.parse(JSON.stringify(err)) });
-                else {
-                    console.log("I am here 1");
-                    var ev = { req: req, conn_id: data.conn_id, destination: data.destination, headers: data.headers, body: data.body };
-                    console.log("I am here 2");
-                    router.eventEmitter.emit('on_client_send_msg', ev);
-                    console.log("I am here 3");
-                    if (options.dispatchMsgOnClientSend) {
-                        console.log("I am here 4");
-                        connectionsManager.dispatchMessage(data.destination, data.headers, data.body, function (err) {
-                            if (err)
-                                res.status(400).json({ exception: JSON.parse(JSON.stringify(err)) });
-                            else
-                                res.jsonp({});
-                        });
-                    }
+            var ev = { req: req, conn_id: data.conn_id, data: { destination: data.destination, headers: data.headers, body: data.body } };
+            router.eventEmitter.emit('on_client_send_msg', ev);
+            if (options.dispatchMsgOnClientSend) {
+                connectionsManager.dispatchMessage(data.destination, data.headers, data.body, function (err) {
+                    if (err)
+                        res.status(400).json({ exception: JSON.parse(JSON.stringify(err)) });
                     else
                         res.jsonp({});
-                }
-            });
+                });
+            }
+            else
+                res.jsonp({});
         }
         else {
             res.status(400).json({ exception: ConnectionsManager.MSG_BAD_CONN });
