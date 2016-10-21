@@ -196,20 +196,24 @@ function authorizeDestination(authApp:any, authMode: DestAuthMode, conn_id: stri
             }
 		};
 		let res = {
-			'setHeader': (fld, value) => {}
-			,'reject': function(err) {
+            '___err___': null
+			,'setHeader': (fld, value) => {}
+			,'reject': function (err) {
                 console.log("\n << reject() >> \n");
-                done(err);
+                this.___err___ = err;
+                finalHandler();
             }
 			,'accept': function () {
                 console.log("\n << accept() >> \n");
-                done(null);
+                this.___err___ = null;
+                finalHandler();
             }
+            ,'get_err': function() {return this.___err___;}
 		};
         //////////////////////////////////////////////////////////////////////////////////////////
         let finalHandler = () => {
             console.log("\n << finalHandler() >> \n");
-            done("destination not authorized");
+            done(res.get_err());
         }
 		authApp(req, res, finalHandler);    // route it
 	} else {
