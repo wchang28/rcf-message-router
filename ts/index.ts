@@ -64,9 +64,13 @@ export class DestinationAuthRouter {
             let res = {
                 err: null
                 ,accept: function () {this.err = null;}
-                ,reject: function (err) {this.err = err;}
+                ,reject: function (err) {
+                    console.log('reject(' + err.toString() + ')');
+                    this.err = err;
+                }
             };
             handler(req, res);
+            console.log('res.err=' + res.err);
             done(res.err);
         } else {
             done('destination not authorized');
@@ -82,7 +86,7 @@ export interface Options {
     pingIntervalMS?: number
     cookieSetter?: CookieSetter;
     dispatchMsgOnClientSend?: boolean;
-    destinationAuthorizeApp?: DestinationAuthRouter;
+    destinationAuthorizeRouter?: DestinationAuthRouter;
 }
 
 let defaultOptions: Options = {
@@ -361,7 +365,7 @@ export function getRouter(eventPath: string, options?: Options) : ISSETopicRoute
         let data = req.body;
         let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'subscribe', data};
         router.eventEmitter.emit('client_cmd', cep);
-        authorizeDestination(options.destinationAuthorizeApp, DestAuthMode.Subscribe, data.conn_id, data.destination, data.headers, null, req, (err:any) => {
+        authorizeDestination(options.destinationAuthorizeRouter, DestAuthMode.Subscribe, data.conn_id, data.destination, data.headers, null, req, (err:any) => {
             if (err)
                 res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
             else {
@@ -394,7 +398,7 @@ export function getRouter(eventPath: string, options?: Options) : ISSETopicRoute
         let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'send', data};
         router.eventEmitter.emit('client_cmd', cep);
         if (connectionsManager.validConnection(data.conn_id)) { // make sure the connection is valid
-            authorizeDestination(options.destinationAuthorizeApp, DestAuthMode.Subscribe, data.conn_id, data.destination, data.headers, data.body, req, (err:any) => {
+            authorizeDestination(options.destinationAuthorizeRouter, DestAuthMode.Subscribe, data.conn_id, data.destination, data.headers, data.body, req, (err:any) => {
                 if (err)
                     res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
                 else {

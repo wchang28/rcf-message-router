@@ -42,7 +42,7 @@ export interface Options {
     pingIntervalMS?: number;
     cookieSetter?: CookieSetter;
     dispatchMsgOnClientSend?: boolean;
-    destinationAuthorizeApp?: DestinationAuthRouter;
+    destinationAuthorizeRouter?: DestinationAuthRouter;
 }
 export declare class ConnectionsManager extends events.EventEmitter {
     private connCount;
