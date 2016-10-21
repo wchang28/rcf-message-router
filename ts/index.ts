@@ -198,10 +198,14 @@ function authorizeDestination(authApp:any, authMode: DestAuthMode, conn_id: stri
 		let res = {
 			'setHeader': (fld, value) => {}
 			,'reject': done
-			,'accept': () => {done(null);}
+			,'accept': () => {
+                console.log("\n << accepted() >> \n");
+                done(null);
+            }
 		};
         //////////////////////////////////////////////////////////////////////////////////////////
         let finalHandler = () => {
+            console.log("\n << in finalHandler() >> \n");
             done("destination not authorized");
         }
 		authApp(req, res, finalHandler);    // route it

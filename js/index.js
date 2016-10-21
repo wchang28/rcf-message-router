@@ -148,10 +148,14 @@ function authorizeDestination(authApp, authMode, conn_id, destination, headers, 
         var res = {
             'setHeader': function (fld, value) { },
             'reject': done,
-            'accept': function () { done(null); }
+            'accept': function () {
+                console.log("\n << accepted() >> \n");
+                done(null);
+            }
         };
         //////////////////////////////////////////////////////////////////////////////////////////
         var finalHandler = function () {
+            console.log("\n << in finalHandler() >> \n");
             done("destination not authorized");
         };
         authApp(req, res, finalHandler); // route it
