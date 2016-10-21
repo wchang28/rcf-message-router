@@ -1,12 +1,14 @@
 {
   "name": "rcf-message-router",
-  "version": "0.0.11",
-  "description": "RCF Message Router",
+  "version": "0.0.12",
+  "description": "RCF Message Notification Router",
   "main": "./js/index.js",
   "typings": "./js/index.d.ts",
   "keywords": [
     "RCF",
     "Messageing",
+    "Notification",
+    "Express",
     "Router"
   ],
   "repository": {

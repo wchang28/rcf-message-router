@@ -27,7 +27,7 @@ let defaultOptions: Options = {
 export class ConnectionsManager extends events.EventEmitter {
     private connCount: number;
     private __connections : {[conn_id: string]: TopicConnection;}
-    private static MSG_BAD_CONN = "bad connection";
+    public static MSG_BAD_CONN = "bad connection";
     constructor() {
         super();
         this.connCount = 0;
@@ -88,14 +88,6 @@ export class ConnectionsManager extends events.EventEmitter {
             });
         }
     }
-    forwardMessage(conn_id: string, destination: string, headers: {[field: string]:any}, message:any, done?: rcf.DoneHandler) {
-        let conn = this.__connections[conn_id];
-        if (conn) {
-            this.dispatchMessage(destination, headers, message, done);
-        } else {
-            if (typeof done === 'function') done(ConnectionsManager.MSG_BAD_CONN);
-        }      
-    }
     toJSON() : Object {
         let ret = [];
         for (let conn_id in this.__connections) {
@@ -130,6 +122,8 @@ export interface CommandEventParams extends ConnectedEventParams {
 }
 
 export interface ClientSendMsgEventParams {
+    req: express.Request;
+    conn_id: string;
     destination: string;
     headers: {[field: string]: any};
     body: any;
@@ -316,23 +310,27 @@ export function getRouter(eventPath: string, options?: Options) : ISSETopicRoute
         let data = req.body;
         let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'send', data};
         router.eventEmitter.emit('client_cmd', cep);
-        authorizeDestination(DestAuthMode.SendMsg, data.destination, data.headers, data.body, options.destinationAuthorizeApp, req, (err:any) => {
-            if (err)
-                res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
-            else {
-                let ev: ClientSendMsgEventParams = {destination: data.destination, headers: data.headers, body: data.body};
-                router.eventEmitter.emit('on_client_send_msg', ev);
-                if (options.dispatchMsgOnClientSend) {
-                    connectionsManager.forwardMessage(data.conn_id, data.destination, data.headers, data.body, (err: any) => {
-                        if (err)
-                            res.status(400).json({exception: JSON.parse(JSON.stringify(err))});
-                        else
-                            res.jsonp({});
-                    });
-                } else
-                    res.jsonp({});
-            }
-        });
+        if (connectionsManager.validConnection(data.conn_id)) { // make sure the connection is valid
+            authorizeDestination(DestAuthMode.SendMsg, data.destination, data.headers, data.body, options.destinationAuthorizeApp, req, (err:any) => {  // make sure this send is authorized for the destination
+                if (err)
+                    res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
+                else {
+                    let ev: ClientSendMsgEventParams = {req, conn_id: data.conn_id, destination: data.destination, headers: data.headers, body: data.body};
+                    router.eventEmitter.emit('on_client_send_msg', ev);
+                    if (options.dispatchMsgOnClientSend) {
+                        connectionsManager.dispatchMessage(data.destination, data.headers, data.body, (err: any) => {
+                            if (err)
+                                res.status(400).json({exception: JSON.parse(JSON.stringify(err))});
+                            else
+                                res.jsonp({});
+                        });
+                    } else
+                        res.jsonp({});
+                }
+            });
+        } else {
+            res.status(400).json({exception: ConnectionsManager.MSG_BAD_CONN});
+        }
     });
     
     return router;
