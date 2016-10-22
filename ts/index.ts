@@ -54,6 +54,7 @@ export class DestinationAuthRouter {
         this.mr.add(destPathPattern, {destPathPattern, handler});
     }
     route(conn_id: string, destination: string, authMode: DestAuthMode, headers:{[field: string]: any}, body: any, originalReq: express.Request, done: (err:any) => void): void {
+        let defaultRejectMsg = 'not authorized to ' + authModeDescriptions[authMode] + ' on ' + destination;
         let ret = this.mr.route(destination);
         if (ret) {  // match the destination path
             let params = ret.params;
@@ -72,11 +73,11 @@ export class DestinationAuthRouter {
             };
             let res = {
                 accept: () => {done(null);}
-                ,reject: (err:any) => {done(err);}
+                ,reject: (err?:any) => {done(err || defaultRejectMsg);}
             };
             handler(req, res);
         } else {
-            done('not authorized to ' + authModeDescriptions[authMode] + ' on ' + destination);
+            done(defaultRejectMsg);
         }
     }
 }

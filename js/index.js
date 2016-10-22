@@ -34,6 +34,7 @@ var DestinationAuthRouter = (function () {
         this.mr.add(destPathPattern, { destPathPattern: destPathPattern, handler: handler });
     };
     DestinationAuthRouter.prototype.route = function (conn_id, destination, authMode, headers, body, originalReq, done) {
+        var defaultRejectMsg = 'not authorized to ' + authModeDescriptions[authMode] + ' on ' + destination;
         var ret = this.mr.route(destination);
         if (ret) {
             var params = ret.params;
@@ -52,12 +53,12 @@ var DestinationAuthRouter = (function () {
             };
             var res = {
                 accept: function () { done(null); },
-                reject: function (err) { done(err); }
+                reject: function (err) { done(err || defaultRejectMsg); }
             };
             handler(req, res);
         }
         else {
-            done('not authorized to ' + authModeDescriptions[authMode] + ' on ' + destination);
+            done(defaultRejectMsg);
         }
     };
     return DestinationAuthRouter;
