@@ -46,7 +46,7 @@ export class DestinationAuthRouter {
     }
     route(conn_id: string, destination: string, authMode: DestAuthMode, headers:{[field: string]: any}, body: any, originalReq:express.Request, done:(err:any) => void): void {
         let ret = this.mr.route(destination);
-        if (ret) {  // find the destination path
+        if (ret) {  // match the destination path
             let params = ret.params;
             let destPathPattern = ret.result.destPathPattern;
             let handler = ret.result.handler;
@@ -62,14 +62,10 @@ export class DestinationAuthRouter {
                 };
             };
             let res = {
-                err: null
-                ,accept: function () {this.err = null;}
-                ,reject: function (err) {
-                    this.err = err;
-                }
+                accept: () => {done(null);}
+                ,reject: (err:any) => {done(err);}
             };
             handler(req, res);
-            done(res.err);
         } else {
             done('destination not authorized');
         }

@@ -43,14 +43,10 @@ var DestinationAuthRouter = (function () {
                 };
             };
             var res = {
-                err: null,
-                accept: function () { this.err = null; },
-                reject: function (err) {
-                    this.err = err;
-                }
+                accept: function () { done(null); },
+                reject: function (err) { done(err); }
             };
             handler(req, res);
-            done(res.err);
         }
         else {
             done('destination not authorized');
