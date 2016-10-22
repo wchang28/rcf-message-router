@@ -42,6 +42,11 @@ export class DestinationAuthRouter {
         this.mr = new MyRouter<RouteResult>();
     }
     use(destPathPattern:string, handler: IDestAuthRouteHandler) {
+        let params = destPathPattern.match(/:\w+/g);
+        if (params) {
+            for (let i in params)
+                this.mr.addPattern(params[i], /^\S+$/);
+        }
         this.mr.add(destPathPattern, {destPathPattern, handler});
     }
     route(conn_id: string, destination: string, authMode: DestAuthMode, headers:{[field: string]: any}, body: any, originalReq:express.Request, done:(err:any) => void): void {

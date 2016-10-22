@@ -23,6 +23,11 @@ var DestinationAuthRouter = (function () {
         this.mr = new MyRouter();
     }
     DestinationAuthRouter.prototype.use = function (destPathPattern, handler) {
+        var params = destPathPattern.match(/:\w+/g);
+        if (params) {
+            for (var i in params)
+                this.mr.addPattern(params[i], /^\S+$/);
+        }
         this.mr.add(destPathPattern, { destPathPattern: destPathPattern, handler: handler });
     };
     DestinationAuthRouter.prototype.route = function (conn_id, destination, authMode, headers, body, originalReq, done) {
