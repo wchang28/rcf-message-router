@@ -7,7 +7,7 @@ export declare enum DestAuthMode {
     Subscribe = 0,
     SendMsg = 1,
 }
-export interface IDestAuthRequest {
+export interface DestAuthRequest {
     conn_id: string;
     authMode: DestAuthMode;
     headers: {
@@ -20,17 +20,17 @@ export interface IDestAuthRequest {
         [fld: string]: string;
     };
 }
-export interface IDestAuthResponse {
+export interface DestAuthResponse {
     reject: (err: any) => void;
     accept: () => void;
 }
-export interface IDestAuthRouteHandler {
-    (req: IDestAuthRequest, res: IDestAuthResponse): void;
+export interface DestAuthRouteHandler {
+    (req: DestAuthRequest, res: DestAuthResponse): void;
 }
 export declare class DestinationAuthRouter {
     private mr;
     constructor();
-    use(destPathPattern: string, handler: IDestAuthRouteHandler): void;
+    use(destPathPattern: string, handler: DestAuthRouteHandler): void;
     route(conn_id: string, destination: string, authMode: DestAuthMode, headers: {
         [field: string]: any;
     }, body: any, originalReq: express.Request, done: (err: any) => void): void;

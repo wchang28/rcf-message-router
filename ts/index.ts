@@ -12,7 +12,11 @@ export enum DestAuthMode {
     ,SendMsg = 1
 }
 
-export interface IDestAuthRequest {
+let authModeDescriptions: {[mode:number]:string} = {};
+authModeDescriptions[DestAuthMode.Subscribe] = "subscribe";
+authModeDescriptions[DestAuthMode.SendMsg] = "send message";
+
+export interface DestAuthRequest {
     conn_id: string;
     authMode: DestAuthMode;
     headers:{[field: string]: any};
@@ -22,18 +26,18 @@ export interface IDestAuthRequest {
     params?: {[fld:string]:string};
 };
 
-export interface IDestAuthResponse {
+export interface DestAuthResponse {
     reject: (err: any) => void;
     accept: () => void;
 };
 
-export interface IDestAuthRouteHandler {
-    (req:IDestAuthRequest, res: IDestAuthResponse): void;
+export interface DestAuthRouteHandler {
+    (req: DestAuthRequest, res: DestAuthResponse): void;
 }
 
 interface RouteResult {
     destPathPattern: string;
-    handler: IDestAuthRouteHandler;
+    handler: DestAuthRouteHandler;
 }
 
 export class DestinationAuthRouter {
@@ -41,7 +45,7 @@ export class DestinationAuthRouter {
     constructor() {
         this.mr = new MyRouter<RouteResult>();
     }
-    use(destPathPattern:string, handler: IDestAuthRouteHandler) {
+    use(destPathPattern:string, handler: DestAuthRouteHandler) {
         let params = destPathPattern.match(/:\w+/g);
         if (params) {
             for (let i in params)
@@ -49,13 +53,13 @@ export class DestinationAuthRouter {
         }
         this.mr.add(destPathPattern, {destPathPattern, handler});
     }
-    route(conn_id: string, destination: string, authMode: DestAuthMode, headers:{[field: string]: any}, body: any, originalReq:express.Request, done:(err:any) => void): void {
+    route(conn_id: string, destination: string, authMode: DestAuthMode, headers:{[field: string]: any}, body: any, originalReq: express.Request, done: (err:any) => void): void {
         let ret = this.mr.route(destination);
         if (ret) {  // match the destination path
             let params = ret.params;
             let destPathPattern = ret.result.destPathPattern;
             let handler = ret.result.handler;
-            let req: IDestAuthRequest = {conn_id, authMode, headers, destination, body, originalReq, params};
+            let req: DestAuthRequest = {conn_id, authMode, headers, destination, body, originalReq, params};
             req['toJSON'] = function() {
                 return {
                     conn_id: this.conn_id
@@ -72,7 +76,7 @@ export class DestinationAuthRouter {
             };
             handler(req, res);
         } else {
-            done('destination not authorized');
+            done('not authorized to ' + authModeDescriptions[authMode] + ' on ' + destination);
         }
     }
 }

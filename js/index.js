@@ -16,6 +16,9 @@ var MyRouter = require('my-router');
     DestAuthMode[DestAuthMode["SendMsg"] = 1] = "SendMsg";
 })(exports.DestAuthMode || (exports.DestAuthMode = {}));
 var DestAuthMode = exports.DestAuthMode;
+var authModeDescriptions = {};
+authModeDescriptions[DestAuthMode.Subscribe] = "subscribe";
+authModeDescriptions[DestAuthMode.SendMsg] = "send message";
 ;
 ;
 var DestinationAuthRouter = (function () {
@@ -54,7 +57,7 @@ var DestinationAuthRouter = (function () {
             handler(req, res);
         }
         else {
-            done('destination not authorized');
+            done('not authorized to ' + authModeDescriptions[authMode] + ' on ' + destination);
         }
     };
     return DestinationAuthRouter;
