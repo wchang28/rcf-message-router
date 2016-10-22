@@ -27,7 +27,7 @@ export interface DestAuthRequest {
 };
 
 export interface DestAuthResponse {
-    reject: (err: any) => void;
+    reject: (err?: any) => void;
     accept: () => void;
 };
 
