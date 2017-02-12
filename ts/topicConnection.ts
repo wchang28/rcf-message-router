@@ -56,30 +56,30 @@ export class TopicConnection extends events.EventEmitter implements ITopicConnec
 		}
 		// emit a 'connected' message on the connection
 		/////////////////////////////////////////////////////////
-        let msg : rcf.IMessage = {
-            headers: {
-                event: rcf.MessageEventType.CONNECT,
-                conn_id: conn_id
-            }
-	    };
+		let msg : rcf.IMessage = {
+			headers: {
+				event: rcf.MessageEventType.CONNECT,
+				conn_id: conn_id
+			}
+		};
 		this.emitMessage(msg);
 		/////////////////////////////////////////////////////////
 	}
 	triggerChangeEvent() : void {this.emit('change');}
 	private emitMessage(msg: rcf.IMessage) : void {this.emit('message', msg);}
 	forwardMessage(destination: string, headers: {[field: string]: any}, message: any) : void {
-        for (let sub_id in this.u) {	// for each subscription this connection has
+		for (let sub_id in this.u) {	// for each subscription this connection has
 			let subscription = this.u[sub_id];
 			let pattern = new RegExp(subscription.dest, 'gi');
 			if (destination.match(pattern)) {	// matching destination
-                let msg: rcf.IMessage = {
-                   headers: {
-                       event: rcf.MessageEventType.MESSAGE,
-                       sub_id: sub_id,
-                       destination: destination
-                   },
-                   body: message
-                };
+				let msg: rcf.IMessage = {
+					headers: {
+						event: rcf.MessageEventType.MESSAGE,
+						sub_id: sub_id,
+						destination: destination
+					},
+					body: message
+				};
 				if (headers) {
 					for (let field in headers) {
 						if (!msg.headers[field])
@@ -98,7 +98,7 @@ export class TopicConnection extends events.EventEmitter implements ITopicConnec
 					}
 				} else
 					this.emitMessage(msg);
-            }
+			}
 		}
 	}
 	get subscriptions() : {[sub_id:string] : Subscription;} {return _.cloneDeep(this.u);}
