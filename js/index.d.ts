@@ -19,6 +19,7 @@ export interface DestAuthRequest {
     method: string;
     authMode: DestAuthMode;
     destination: string;
+    connection: ITopicConnection;
     headers: {
         [field: string]: any;
     };
@@ -28,8 +29,7 @@ export interface DestAuthRequest {
     body: any;
     params: any;
     query: any;
-    connection: ITopicConnection;
-    path: string;
+    route: any;
 }
 export interface DestAuthResponse {
     reject: (err?: any) => void;
