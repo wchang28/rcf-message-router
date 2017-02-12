@@ -88,7 +88,7 @@ var TopicConnection = (function (_super) {
             }
         }
     };
-    Object.defineProperty(TopicConnection.prototype, "subscriptions", {
+    Object.defineProperty(TopicConnection.prototype, "subs", {
         get: function () { return _.cloneDeep(this.u); },
         enumerable: true,
         configurable: true
@@ -178,14 +178,12 @@ var TopicConnection = (function (_super) {
     });
     TopicConnection.prototype.destroy = function () { this.s.destroy; };
     TopicConnection.prototype.toJSON = function () {
-        var o = {
+        return {
             id: this.id,
             remoteAddress: this.remoteAddress,
-            remotePort: this.remotePort,
             cookie: this.cookie,
-            subscriptions: this.subscriptions
+            subs: this.subs
         };
-        return o;
     };
     return TopicConnection;
 }(events.EventEmitter));

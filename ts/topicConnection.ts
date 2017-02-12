@@ -9,9 +9,17 @@ export interface Subscription {
 	hdrs?: {[field: string]: any};
 }
 
+export interface ITopicConnectionJSON {
+	id: string;
+	cookie: any;
+	remoteAddress: string;
+	subs: {[sub_id:string] : Subscription;} 
+}
+
 export interface ITopicConnection {
 	readonly id: string;
 	cookie: any;
+	readonly subs: {[sub_id:string] : Subscription;} 
 	readonly remoteAddress: string
 	readonly remotePort: number;
 	readonly remoteFamily: string;
@@ -20,7 +28,8 @@ export interface ITopicConnection {
 	readonly bytesWritten: number;
 	readonly destroyed: boolean;
 	destroy: () => void;
-	toJSON: () => Object;
+	triggerChangeEvent: () => void;
+	toJSON: () => ITopicConnectionJSON;
 }
 
 // this class emits the following events
@@ -101,7 +110,7 @@ export class TopicConnection extends events.EventEmitter implements ITopicConnec
 			}
 		}
 	}
-	get subscriptions() : {[sub_id:string] : Subscription;} {return _.cloneDeep(this.u);}
+	get subs() : {[sub_id:string] : Subscription;} {return _.cloneDeep(this.u);}
 	addSubscription(sub_id: string, destination: string, headers: {[field: string]: any}) : void {
 		let subscription: Subscription = {
 			dest: destination
@@ -145,14 +154,12 @@ export class TopicConnection extends events.EventEmitter implements ITopicConnec
 	get destroyed() : boolean {return this.s.destroyed;}
 	destroy() : void {this.s.destroy;}
 	
-	toJSON() : Object {
-		let o = {
+	toJSON() : ITopicConnectionJSON {
+		return {
 			id: this.id
 			,remoteAddress: this.remoteAddress
-			,remotePort: this.remotePort
 			,cookie: this.cookie
-			,subscriptions: this.subscriptions
-		}
-		return o;
+			,subs: this.subs
+		};
 	}
 }

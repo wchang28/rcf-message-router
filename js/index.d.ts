@@ -1,7 +1,7 @@
 /// <reference types="express" />
 import * as express from 'express';
-import { ITopicConnection, Subscription } from './topicConnection';
-export { ITopicConnection, Subscription };
+import { ITopicConnection, Subscription, ITopicConnectionJSON } from './topicConnection';
+export { ITopicConnection, Subscription, ITopicConnectionJSON };
 export interface CookieMaker {
     (req: express.Request): any;
 }
@@ -45,29 +45,15 @@ export interface IConnectionsManager {
         [field: string]: any;
     }, message: any) => void;
     on: (event: string, listener: Function) => this;
-    toJSON: () => Object;
+    toJSON: () => ITopicConnectionJSON[];
 }
-export interface EventParams {
-    req: express.Request;
-    remoteAddress: string;
-}
-export interface ConnectedEventParams extends EventParams {
-    conn_id: string;
-}
-export interface CommandEventParams extends ConnectedEventParams {
-    cmd: "subscribe" | "unsubscribe" | "send";
-    data: any;
-}
-export interface ClientSendMsgEventParams {
-    req: express.Request;
-    conn_id: string;
-    data: {
-        destination: string;
-        headers: {
-            [field: string]: any;
-        };
-        body: any;
+export declare type ClientCommandType = "subscribe" | "unsubscribe" | "send";
+export interface SendMsgParams {
+    destination: string;
+    headers: {
+        [field: string]: any;
     };
+    body: any;
 }
 export interface IMsgRouterReturn {
     router: express.Router;

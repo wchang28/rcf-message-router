@@ -8,9 +8,20 @@ export interface Subscription {
         [field: string]: any;
     };
 }
+export interface ITopicConnectionJSON {
+    id: string;
+    cookie: any;
+    remoteAddress: string;
+    subs: {
+        [sub_id: string]: Subscription;
+    };
+}
 export interface ITopicConnection {
     readonly id: string;
     cookie: any;
+    readonly subs: {
+        [sub_id: string]: Subscription;
+    };
     readonly remoteAddress: string;
     readonly remotePort: number;
     readonly remoteFamily: string;
@@ -19,7 +30,8 @@ export interface ITopicConnection {
     readonly bytesWritten: number;
     readonly destroyed: boolean;
     destroy: () => void;
-    toJSON: () => Object;
+    triggerChangeEvent: () => void;
+    toJSON: () => ITopicConnectionJSON;
 }
 export declare class TopicConnection extends events.EventEmitter implements ITopicConnection {
     private i;
@@ -33,7 +45,7 @@ export declare class TopicConnection extends events.EventEmitter implements ITop
     forwardMessage(destination: string, headers: {
         [field: string]: any;
     }, message: any): void;
-    readonly subscriptions: {
+    readonly subs: {
         [sub_id: string]: Subscription;
     };
     addSubscription(sub_id: string, destination: string, headers: {
@@ -52,5 +64,5 @@ export declare class TopicConnection extends events.EventEmitter implements ITop
     readonly bytesWritten: number;
     readonly destroyed: boolean;
     destroy(): void;
-    toJSON(): Object;
+    toJSON(): ITopicConnectionJSON;
 }

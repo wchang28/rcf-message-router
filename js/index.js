@@ -36,12 +36,12 @@ function destAuth(handler) {
 exports.destAuth = destAuth;
 // this class emits the following events
 // 1. change
-// 2. sse_connect (EventParams)
-// 3. sse_disconnect (EventParams)
-// 4. client_connect (ConnectedEventParams)
-// 5. client_disconnect (ConnectedEventParams)
-// 6. client_cmd (CommandEventParams)
-// 7. on_client_send_msg (ClientSendMsgEventParams)
+// 2. sse_connect (req, remoteAddress, remotePort)
+// 3. sse_disconnect (req, remoteAddress, remotePort)
+// 4. client_connect (ITopicConnection)
+// 5. client_disconnect (ITopicConnection)
+// 6. client_cmd (req, conn_id, ClientCommandType, data)
+// 7. on_client_send_msg (ITopicConnection, SendMsgParams)
 // 8. sse_send (string)
 var ConnectionsManager = (function (_super) {
     __extends(ConnectionsManager, _super);
@@ -68,7 +68,7 @@ var ConnectionsManager = (function (_super) {
         });
         this.__connCount++;
         this.emit('change');
-        return conn_id;
+        return conn;
     };
     ConnectionsManager.prototype.removeConnection = function (conn_id) {
         var conn = this.__connections[conn_id];
@@ -197,8 +197,8 @@ function get(eventPath, options) {
     router.get(eventPath, function (req, res) {
         var cookie = (options.connCookieMaker ? options.connCookieMaker(req) : null);
         var remoteAddress = req.connection.remoteAddress;
-        var ep = { req: req, remoteAddress: remoteAddress };
-        connectionsManager.emit('sse_connect', ep); // fire the "sse_connect" event
+        var remotePort = req.connection.remotePort;
+        connectionsManager.emit('sse_connect', req, remoteAddress, remotePort); // fire the "sse_connect" event
         // init SSE
         ///////////////////////////////////////////////////////////////////////
         //send headers for event-stream connection
@@ -220,26 +220,21 @@ function get(eventPath, options) {
         ///////////////////////////////////////////////////////////////////////
         // create a connection
         ///////////////////////////////////////////////////////////////////////
-        var conn_id = connectionsManager.createConnection(req.connection, cookie, function (msg) {
+        var conn = connectionsManager.createConnection(req.connection, cookie, function (msg) {
             res.sseSend(msg);
         }, options.connKeepAliveIntervalMS);
         ///////////////////////////////////////////////////////////////////////
-        var cep = { req: req, remoteAddress: remoteAddress, conn_id: conn_id };
-        connectionsManager.emit('client_connect', cep); // fire the "client_connect" event
+        connectionsManager.emit('client_connect', conn); // fire the "client_connect" event
         // The 'close' event is fired when a user closes their browser window.
         req.on("close", function () {
-            connectionsManager.emit('sse_disconnect', ep); // fire the "sse_disconnect" event
-            if (conn_id.length > 0) {
-                connectionsManager.removeConnection(conn_id);
-                connectionsManager.emit('client_disconnect', cep); // fire the "client_disconnect" event
-            }
+            connectionsManager.emit('sse_disconnect', req, remoteAddress, remotePort); // fire the "sse_disconnect" event
+            connectionsManager.removeConnection(conn.id);
+            connectionsManager.emit('client_disconnect', conn); // fire the "client_disconnect" event
         });
     });
     router.post(eventPath + '/subscribe', function (req, res) {
-        var remoteAddress = req.connection.remoteAddress;
         var data = req.body;
-        var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'subscribe', data: data };
-        connectionsManager.emit('client_cmd', cep);
+        connectionsManager.emit('client_cmd', req, data.conn_id, 'subscribe', data);
         connectionsManager.addConnSubscription(data.conn_id, data.sub_id, data.destination, data.headers)
             .then(function () {
             res.jsonp({});
@@ -248,10 +243,8 @@ function get(eventPath, options) {
         });
     });
     router.get(eventPath + '/unsubscribe', function (req, res) {
-        var remoteAddress = req.connection.remoteAddress;
         var data = req.query;
-        var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'unsubscribe', data: data };
-        connectionsManager.emit('client_cmd', cep);
+        connectionsManager.emit('client_cmd', req, data.conn_id, 'unsubscribe', data);
         try {
             connectionsManager.removeConnSubscription(data.conn_id, data.sub_id);
             res.jsonp({});
@@ -261,14 +254,11 @@ function get(eventPath, options) {
         }
     });
     router.post(eventPath + '/send', function (req, res) {
-        var remoteAddress = req.connection.remoteAddress;
         var data = req.body;
-        var cep = { req: req, remoteAddress: remoteAddress, conn_id: data.conn_id, cmd: 'send', data: data };
-        connectionsManager.emit('client_cmd', cep);
+        connectionsManager.emit('client_cmd', req, data.conn_id, 'send', data);
         connectionsManager.authorizeDestination(data.conn_id, DestAuthMode.SendMsg, data.destination, data.headers, data.body)
-            .then(function () {
-            var ev = { req: req, conn_id: data.conn_id, data: { destination: data.destination, headers: data.headers, body: data.body } };
-            connectionsManager.emit('on_client_send_msg', ev);
+            .then(function (connection) {
+            connectionsManager.emit('on_client_send_msg', connection, { destination: data.destination, headers: data.headers, body: data.body });
             if (options.dispatchMsgOnClientSend)
                 connectionsManager.dispatchMessage(data.destination, data.headers, data.body);
             res.jsonp({});

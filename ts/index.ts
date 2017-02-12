@@ -5,8 +5,8 @@ import * as express from 'express';
 import * as bodyParser from 'body-parser';
 import * as _ from 'lodash';
 import {Socket} from 'net';
-import {ITopicConnection, TopicConnection, Subscription} from './topicConnection';
-export {ITopicConnection, Subscription};
+import {ITopicConnection, TopicConnection, Subscription, ITopicConnectionJSON} from './topicConnection';
+export {ITopicConnection, Subscription, ITopicConnectionJSON};
 
 export interface CookieMaker {
     (req: express.Request): any;
@@ -67,12 +67,12 @@ export function destAuth(handler: DestAuthRequestHandler) : express.RequestHandl
 
 // this interface emits the following events
 // 1. change
-// 2. sse_connect (EventParams)
-// 3. sse_disconnect (EventParams)
-// 4. client_connect (ConnectedEventParams)
-// 5. client_disconnect (ConnectedEventParams)
-// 6. client_cmd (CommandEventParams)
-// 7. on_client_send_msg (ClientSendMsgEventParams)
+// 2. sse_connect (req, remoteAddress, remotePort)
+// 3. sse_disconnect (req, remoteAddress, remotePort)
+// 4. client_connect (ITopicConnection)
+// 5. client_disconnect (ITopicConnection)
+// 6. client_cmd (req, conn_id, ClientCommandType, data)
+// 7. on_client_send_msg (ITopicConnection, SendMsgParams)
 // 8. sse_send (string)
 export interface IConnectionsManager {
     readonly ConnectionsCount: number;
@@ -80,17 +80,17 @@ export interface IConnectionsManager {
     findConnections: (criteria: (conn: ITopicConnection) => boolean) => ITopicConnection[];
     dispatchMessage: (destination: string, headers: {[field: string]:any}, message:any) => void;
     on: (event: string, listener: Function) => this;
-    toJSON: () => Object;
+    toJSON: () => ITopicConnectionJSON[];
 }
 
 // this class emits the following events
 // 1. change
-// 2. sse_connect (EventParams)
-// 3. sse_disconnect (EventParams)
-// 4. client_connect (ConnectedEventParams)
-// 5. client_disconnect (ConnectedEventParams)
-// 6. client_cmd (CommandEventParams)
-// 7. on_client_send_msg (ClientSendMsgEventParams)
+// 2. sse_connect (req, remoteAddress, remotePort)
+// 3. sse_disconnect (req, remoteAddress, remotePort)
+// 4. client_connect (ITopicConnection)
+// 5. client_disconnect (ITopicConnection)
+// 6. client_cmd (req, conn_id, ClientCommandType, data)
+// 7. on_client_send_msg (ITopicConnection, SendMsgParams)
 // 8. sse_send (string)
 class ConnectionsManager extends events.EventEmitter implements IConnectionsManager {
     private __connCount: number;
@@ -102,7 +102,7 @@ class ConnectionsManager extends events.EventEmitter implements IConnectionsMana
         this.__connections = {};
     }
     get ConnectionsCount() : number { return this.__connCount;}
-    createConnection(socket: Socket, cookie: any, messageCB: rcf.MessageCallback, connKeepAliveIntervallMS: number) : string {
+    createConnection(socket: Socket, cookie: any, messageCB: rcf.MessageCallback, connKeepAliveIntervallMS: number) : TopicConnection {
         let conn_id = generate();    // generate a connection id;
         let conn = new TopicConnection(conn_id, socket, cookie, messageCB, connKeepAliveIntervallMS);
         this.__connections[conn_id] = conn;
@@ -111,7 +111,7 @@ class ConnectionsManager extends events.EventEmitter implements IConnectionsMana
         });
         this.__connCount++;
         this.emit('change');
-        return conn_id;
+        return conn;
     }
     removeConnection(conn_id: string) : void {
         let conn = this.__connections[conn_id];
@@ -213,8 +213,8 @@ class ConnectionsManager extends events.EventEmitter implements IConnectionsMana
             }
         });
     }
-    toJSON() : Object {
-        let ret = [];
+    toJSON() : ITopicConnectionJSON[] {
+        let ret: ITopicConnectionJSON[] = [];
         for (let conn_id in this.__connections) {    // for each connection
             let conn = this.__connections[conn_id];
             ret.push(conn.toJSON());
@@ -227,28 +227,12 @@ interface SSEResponse extends express.Response {
     sseSend: (msg:any) => void;
 }
 
-export interface EventParams {
-    req: express.Request;
-    remoteAddress: string;
-}
+export type ClientCommandType = "subscribe" | "unsubscribe" | "send";
 
-export interface ConnectedEventParams extends EventParams {
-    conn_id: string;
-}
-
-export interface CommandEventParams extends ConnectedEventParams {
-    cmd: "subscribe" | "unsubscribe" | "send";
-    data: any;
-}
-
-export interface ClientSendMsgEventParams {
-    req: express.Request;
-    conn_id: string;
-    data: {
-        destination: string;
-        headers: {[field: string]: any};
-        body: any;
-    };
+export interface SendMsgParams {
+    destination: string;
+    headers: {[field: string]: any};
+    body: any;
 }
 
 export interface IMsgRouterReturn {
@@ -268,9 +252,9 @@ export function get(eventPath: string, options?: Options) : IMsgRouterReturn {
     router.get(eventPath, (req: express.Request, res: SSEResponse) => {
         let cookie = (options.connCookieMaker ? options.connCookieMaker(req) : null);
         let remoteAddress = req.connection.remoteAddress;
-        let ep: EventParams = {req, remoteAddress};
+        let remotePort = req.connection.remotePort;
 
-        connectionsManager.emit('sse_connect', ep);    // fire the "sse_connect" event
+        connectionsManager.emit('sse_connect', req, remoteAddress, remotePort);    // fire the "sse_connect" event
         
         // init SSE
         ///////////////////////////////////////////////////////////////////////
@@ -293,30 +277,24 @@ export function get(eventPath: string, options?: Options) : IMsgRouterReturn {
 		
         // create a connection
         ///////////////////////////////////////////////////////////////////////
-        let conn_id = connectionsManager.createConnection(req.connection, cookie, (msg: rcf.IMessage) => {
+        let conn = connectionsManager.createConnection(req.connection, cookie, (msg: rcf.IMessage) => {
             res.sseSend(msg);
         }, options.connKeepAliveIntervalMS);
         ///////////////////////////////////////////////////////////////////////
 
-        let cep: ConnectedEventParams = {req, remoteAddress, conn_id};
-
-        connectionsManager.emit('client_connect', cep);    // fire the "client_connect" event
+        connectionsManager.emit('client_connect', conn);    // fire the "client_connect" event
 
         // The 'close' event is fired when a user closes their browser window.
         req.on("close", () => {
-            connectionsManager.emit('sse_disconnect', ep); // fire the "sse_disconnect" event
-            if (conn_id.length > 0) {
-                connectionsManager.removeConnection(conn_id);
-                connectionsManager.emit('client_disconnect', cep); // fire the "client_disconnect" event
-            }
+            connectionsManager.emit('sse_disconnect', req, remoteAddress, remotePort); // fire the "sse_disconnect" event
+            connectionsManager.removeConnection(conn.id);
+            connectionsManager.emit('client_disconnect', conn); // fire the "client_disconnect" event
         });
     });
     
     router.post(eventPath + '/subscribe', (req: express.Request, res: express.Response) => {
-        let remoteAddress = req.connection.remoteAddress;
         let data = req.body;
-        let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'subscribe', data};
-        connectionsManager.emit('client_cmd', cep);
+        connectionsManager.emit('client_cmd', req, data.conn_id, 'subscribe', data);
         connectionsManager.addConnSubscription(data.conn_id, data.sub_id, data.destination, data.headers)
         .then(() => {
             res.jsonp({});
@@ -326,10 +304,8 @@ export function get(eventPath: string, options?: Options) : IMsgRouterReturn {
     });
 
     router.get(eventPath + '/unsubscribe', (req: express.Request, res: express.Response) => {
-        let remoteAddress = req.connection.remoteAddress;
         let data = req.query;
-        let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'unsubscribe', data};
-        connectionsManager.emit('client_cmd', cep);
+        connectionsManager.emit('client_cmd', req, data.conn_id, 'unsubscribe', data);
         try {
             connectionsManager.removeConnSubscription(data.conn_id, data.sub_id);
             res.jsonp({});
@@ -339,14 +315,11 @@ export function get(eventPath: string, options?: Options) : IMsgRouterReturn {
     });
 
     router.post(eventPath + '/send', (req: express.Request, res: express.Response) => {
-        let remoteAddress = req.connection.remoteAddress;
         let data = req.body;
-        let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'send', data};
-        connectionsManager.emit('client_cmd', cep);
+        connectionsManager.emit('client_cmd', req, data.conn_id, 'send', data);
         connectionsManager.authorizeDestination(data.conn_id, DestAuthMode.SendMsg, data.destination, data.headers, data.body)
-        .then(() => {
-            let ev: ClientSendMsgEventParams = {req, conn_id: data.conn_id, data:{destination: data.destination, headers: data.headers, body: data.body}};
-            connectionsManager.emit('on_client_send_msg', ev);
+        .then((connection: TopicConnection) => {
+            connectionsManager.emit('on_client_send_msg', connection, {destination: data.destination, headers: data.headers, body: data.body});
             if (options.dispatchMsgOnClientSend) connectionsManager.dispatchMessage(data.destination, data.headers, data.body);
             res.jsonp({});
         }).catch((err:any) => {
