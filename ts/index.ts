@@ -89,7 +89,7 @@ export interface IConnectionsManager {
 // 3. sse_disconnect (req, remoteAddress, remotePort)
 // 4. client_connect (ITopicConnection)
 // 5. client_disconnect (ITopicConnection)
-// 6. client_cmd (req, conn_id, ClientCommandType, data)
+// 6. client_cmd (ClientCommandType, req, conn_id, data)
 // 7. on_client_send_msg (ITopicConnection, SendMsgParams)
 // 8. sse_send (string)
 class ConnectionsManager extends events.EventEmitter implements IConnectionsManager {
@@ -294,7 +294,7 @@ export function get(eventPath: string, options?: Options) : IMsgRouterReturn {
     
     router.post(eventPath + '/subscribe', (req: express.Request, res: express.Response) => {
         let data = req.body;
-        connectionsManager.emit('client_cmd', req, data.conn_id, 'subscribe', data);
+        connectionsManager.emit('client_cmd', 'subscribe', req, data.conn_id, data);
         connectionsManager.addConnSubscription(data.conn_id, data.sub_id, data.destination, data.headers)
         .then(() => {
             res.jsonp({});
@@ -305,7 +305,7 @@ export function get(eventPath: string, options?: Options) : IMsgRouterReturn {
 
     router.get(eventPath + '/unsubscribe', (req: express.Request, res: express.Response) => {
         let data = req.query;
-        connectionsManager.emit('client_cmd', req, data.conn_id, 'unsubscribe', data);
+        connectionsManager.emit('client_cmd', 'unsubscribe', req, data.conn_id, data);
         try {
             connectionsManager.removeConnSubscription(data.conn_id, data.sub_id);
             res.jsonp({});
@@ -316,7 +316,7 @@ export function get(eventPath: string, options?: Options) : IMsgRouterReturn {
 
     router.post(eventPath + '/send', (req: express.Request, res: express.Response) => {
         let data = req.body;
-        connectionsManager.emit('client_cmd', req, data.conn_id, 'send', data);
+        connectionsManager.emit('client_cmd', 'send', req, data.conn_id, data);
         connectionsManager.authorizeDestination(data.conn_id, DestAuthMode.SendMsg, data.destination, data.headers, data.body)
         .then((connection: TopicConnection) => {
             connectionsManager.emit('on_client_send_msg', connection, {destination: data.destination, headers: data.headers, body: data.body});
