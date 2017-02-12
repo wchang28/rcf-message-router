@@ -38,11 +38,11 @@ exports.destAuth = destAuth;
 // 1. change
 // 2. sse_connect (req, remoteAddress, remotePort)
 // 3. sse_disconnect (req, remoteAddress, remotePort)
-// 4. client_connect (ITopicConnection)
-// 5. client_disconnect (ITopicConnection)
-// 6. client_cmd (ClientCommandType, req, conn_id, data)
-// 7. on_client_send_msg (ITopicConnection, SendMsgParams)
-// 8. sse_send (string)
+// 4. client_connect (req, ITopicConnection)
+// 5. client_disconnect (req, ITopicConnection)
+// 6. client_cmd (req, ClientCommandType, conn_id, data)
+// 7. on_client_send_msg (req, ITopicConnection, SendMsgParams)
+// 8. sse_send (req, string)
 var ConnectionsManager = (function (_super) {
     __extends(ConnectionsManager, _super);
     function ConnectionsManager(destAuthRouter) {
@@ -214,7 +214,7 @@ function get(eventPath, options) {
                 s += "event: " + event.toString() + "\n";
             s += "data: " + JSON.stringify(data) + "\n\n";
             res.write(s);
-            connectionsManager.emit('sse_send', s);
+            connectionsManager.emit('sse_send', req, s);
         };
         res.write('\n');
         ///////////////////////////////////////////////////////////////////////
@@ -224,17 +224,17 @@ function get(eventPath, options) {
             res.sseSend(msg);
         }, options.connKeepAliveIntervalMS);
         ///////////////////////////////////////////////////////////////////////
-        connectionsManager.emit('client_connect', conn); // fire the "client_connect" event
+        connectionsManager.emit('client_connect', req, conn); // fire the "client_connect" event
         // The 'close' event is fired when a user closes their browser window.
         req.on("close", function () {
             connectionsManager.emit('sse_disconnect', req, remoteAddress, remotePort); // fire the "sse_disconnect" event
             connectionsManager.removeConnection(conn.id);
-            connectionsManager.emit('client_disconnect', conn); // fire the "client_disconnect" event
+            connectionsManager.emit('client_disconnect', req, conn); // fire the "client_disconnect" event
         });
     });
     router.post(eventPath + '/subscribe', function (req, res) {
         var data = req.body;
-        connectionsManager.emit('client_cmd', 'subscribe', req, data.conn_id, data);
+        connectionsManager.emit('client_cmd', req, 'subscribe', data.conn_id, data);
         connectionsManager.addConnSubscription(data.conn_id, data.sub_id, data.destination, data.headers)
             .then(function () {
             res.jsonp({});
@@ -244,7 +244,7 @@ function get(eventPath, options) {
     });
     router.get(eventPath + '/unsubscribe', function (req, res) {
         var data = req.query;
-        connectionsManager.emit('client_cmd', 'unsubscribe', req, data.conn_id, data);
+        connectionsManager.emit('client_cmd', req, 'unsubscribe', data.conn_id, data);
         try {
             connectionsManager.removeConnSubscription(data.conn_id, data.sub_id);
             res.jsonp({});
@@ -255,10 +255,10 @@ function get(eventPath, options) {
     });
     router.post(eventPath + '/send', function (req, res) {
         var data = req.body;
-        connectionsManager.emit('client_cmd', 'send', req, data.conn_id, data);
+        connectionsManager.emit('client_cmd', req, 'send', data.conn_id, data);
         connectionsManager.authorizeDestination(data.conn_id, DestAuthMode.SendMsg, data.destination, data.headers, data.body)
             .then(function (connection) {
-            connectionsManager.emit('on_client_send_msg', connection, { destination: data.destination, headers: data.headers, body: data.body });
+            connectionsManager.emit('on_client_send_msg', req, connection, { destination: data.destination, headers: data.headers, body: data.body });
             if (options.dispatchMsgOnClientSend)
                 connectionsManager.dispatchMessage(data.destination, data.headers, data.body);
             res.jsonp({});
