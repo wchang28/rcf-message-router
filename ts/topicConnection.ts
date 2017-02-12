@@ -16,9 +16,9 @@ export interface ITopicConnection {
 	readonly remotePort: number;
 	readonly remoteFamily: string;
 	readonly localAddress: string;
-    readonly bytesRead: number;
-    readonly bytesWritten: number;
-    readonly destroyed: boolean;
+	readonly bytesRead: number;
+	readonly bytesWritten: number;
+	readonly destroyed: boolean;
 	destroy: () => void;
 	toJSON: () => Object;
 }
@@ -140,9 +140,9 @@ export class TopicConnection extends events.EventEmitter implements ITopicConnec
 	get remoteFamily() : string {return this.s.remoteFamily;}
 	get localAddress() : string {return this.s.localAddress;}
 	get localPort(): number {return this.s.localPort;}
-    get bytesRead() : number {return this.s.bytesRead;}
+	get bytesRead() : number {return this.s.bytesRead;}
 	get bytesWritten() : number {return this.s.bytesWritten;}
-    get destroyed() : boolean {return this.s.destroyed;}
+	get destroyed() : boolean {return this.s.destroyed;}
 	destroy() : void {this.s.destroy;}
 	
 	toJSON() : Object {
