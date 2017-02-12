@@ -180,9 +180,16 @@ var TopicConnection = (function (_super) {
     TopicConnection.prototype.toJSON = function () {
         return {
             id: this.id,
-            remoteAddress: this.remoteAddress,
             cookie: this.cookie,
-            subs: this.subs
+            subs: this.subs,
+            remoteAddress: this.remoteAddress,
+            remotePort: this.remotePort,
+            remoteFamily: this.remoteFamily,
+            localAddress: this.localAddress,
+            localPort: this.localPort,
+            bytesRead: this.bytesRead,
+            bytesWritten: this.bytesWritten,
+            destroyed: this.destroyed
         };
     };
     return TopicConnection;

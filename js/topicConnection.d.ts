@@ -11,10 +11,17 @@ export interface Subscription {
 export interface ITopicConnectionJSON {
     id: string;
     cookie: any;
-    remoteAddress: string;
     subs: {
         [sub_id: string]: Subscription;
     };
+    remoteAddress: string;
+    remotePort: number;
+    remoteFamily: string;
+    localAddress: string;
+    localPort: number;
+    bytesRead: number;
+    bytesWritten: number;
+    destroyed: boolean;
 }
 export interface ITopicConnection {
     readonly id: string;
@@ -26,6 +33,7 @@ export interface ITopicConnection {
     readonly remotePort: number;
     readonly remoteFamily: string;
     readonly localAddress: string;
+    readonly localPort: number;
     readonly bytesRead: number;
     readonly bytesWritten: number;
     readonly destroyed: boolean;
