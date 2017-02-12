@@ -1,11 +1,30 @@
 import * as rcf from 'rcf';
-import * as uuid from 'node-uuid';
+import {generate} from 'shortid';
 import * as events from 'events';
 import * as express from 'express';
 import * as bodyParser from 'body-parser';
 import * as _ from 'lodash';
-import {TopicConnection} from './topicConnection';
-import MyRouter = require('my-router');
+import {Socket} from 'net';
+import {ITopicConnection, TopicConnection, Subscription} from './topicConnection';
+export {ITopicConnection, Subscription};
+
+export interface CookieMaker {
+    (req: express.Request): any;
+}
+
+export interface Options {
+    connKeepAliveIntervalMS?: number;                   // keep alive message interval im ms for the connection
+    connCookieMaker?: CookieMaker;                      // custom cookie maker for the connection
+    dispatchMsgOnClientSend?: boolean;                  // dispatch messages when client send messages
+    destinationAuthorizeRouter?: express.Router;        // message subscription/send authorization router (based on message destination path)
+}
+
+let defaultOptions: Options = {
+    connKeepAliveIntervalMS: 30000
+    ,connCookieMaker: null
+    ,dispatchMsgOnClientSend: true
+    ,destinationAuthorizeRouter: null
+};
 
 export enum DestAuthMode {
     Subscribe = 0
@@ -17,13 +36,16 @@ authModeDescriptions[DestAuthMode.Subscribe] = "subscribe";
 authModeDescriptions[DestAuthMode.SendMsg] = "send message";
 
 export interface DestAuthRequest {
-    conn_id: string;
+    method: string;
     authMode: DestAuthMode;
-    headers:{[field: string]: any};
     destination: string;
+    headers:{[field: string]: any};
+    originalUrl: string;
+    url: string;
     body: any;
-    originalReq: express.Request;
-    params?: {[fld:string]:string};
+    params: any;
+    query: any;
+    connection: ITopicConnection;
 };
 
 export interface DestAuthResponse {
@@ -31,142 +53,169 @@ export interface DestAuthResponse {
     accept: () => void;
 };
 
-export interface DestAuthRouteHandler {
-    (req: DestAuthRequest, res: DestAuthResponse): void;
+export interface DestAuthRequestHandler {
+    (req: DestAuthRequest, res: DestAuthResponse, next: express.NextFunction): void;
 }
 
-interface RouteResult {
-    destPathPattern: string;
-    handler: DestAuthRouteHandler;
-}
-
-export class DestinationAuthRouter {
-    private mr: MyRouter<RouteResult>;
-    constructor() {
-        this.mr = new MyRouter<RouteResult>();
-    }
-    use(destPathPattern:string, handler: DestAuthRouteHandler) {
-        let params = destPathPattern.match(/:\w+/g);
-        if (params) {
-            for (let i in params)
-                this.mr.addPattern(params[i], /^\S+$/);
-        }
-        this.mr.add(destPathPattern, {destPathPattern, handler});
-    }
-    route(conn_id: string, destination: string, authMode: DestAuthMode, headers:{[field: string]: any}, body: any, originalReq: express.Request, done: (err:any) => void): void {
-        let defaultRejectMsg = 'not authorized to ' + authModeDescriptions[authMode] + ' on ' + destination;
-        let ret = this.mr.route(destination);
-        if (ret) {  // match the destination path
-            let params = ret.params;
-            let destPathPattern = ret.result.destPathPattern;
-            let handler = ret.result.handler;
-            let req: DestAuthRequest = {conn_id, authMode, headers, destination, body, originalReq, params};
-            req['toJSON'] = function() {
-                return {
-                    conn_id: this.conn_id
-                    ,authMode: this.authMode
-                    ,headers: this.headers
-                    ,destination: this.destination
-                    ,body: this.body
-                    ,params: this.params
-                };
-            };
-            let res = {
-                accept: () => {done(null);}
-                ,reject: (err?:any) => {done(err || defaultRejectMsg);}
-            };
-            handler(req, res);
-        } else {
-            done(defaultRejectMsg);
-        }
+export function destAuth(handler: DestAuthRequestHandler) : express.RequestHandler {
+    return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+        let destAuthReq:any = req;
+        let destAuthRes:any = res;
+        handler(destAuthReq, destAuthRes, next);
     }
 }
 
-export interface CookieSetter {
-    (req: express.Request): any;
-}
-
-export interface Options {
-    pingIntervalMS?: number
-    cookieSetter?: CookieSetter;
-    dispatchMsgOnClientSend?: boolean;
-    destinationAuthorizeRouter?: DestinationAuthRouter;
-}
-
-let defaultOptions: Options = {
-	pingIntervalMS: 10000
-    ,dispatchMsgOnClientSend: true
+// this interface emits the following events
+// 1. change
+// 2. sse_connect (EventParams)
+// 3. sse_disconnect (EventParams)
+// 4. client_connect (ConnectedEventParams)
+// 5. client_disconnect (ConnectedEventParams)
+// 6. client_cmd (CommandEventParams)
+// 7. on_client_send_msg (ClientSendMsgEventParams)
+// 8. sse_send (string)
+export interface IConnectionsManager {
+    readonly ConnectionsCount: number;
+    getConnection: (conn_id: string) => ITopicConnection;
+    findConnections: (criteria: (conn: ITopicConnection) => boolean) => ITopicConnection[];
+    dispatchMessage: (destination: string, headers: {[field: string]:any}, message:any) => void;
+    on: (event: string, listener: Function) => this;
+    toJSON: () => Object;
 }
 
 // this class emits the following events
 // 1. change
-export class ConnectionsManager extends events.EventEmitter {
-    private connCount: number;
+// 2. sse_connect (EventParams)
+// 3. sse_disconnect (EventParams)
+// 4. client_connect (ConnectedEventParams)
+// 5. client_disconnect (ConnectedEventParams)
+// 6. client_cmd (CommandEventParams)
+// 7. on_client_send_msg (ClientSendMsgEventParams)
+// 8. sse_send (string)
+class ConnectionsManager extends events.EventEmitter implements IConnectionsManager {
+    private __connCount: number;
     private __connections : {[conn_id: string]: TopicConnection;}
-    public static MSG_BAD_CONN = "bad connection";
-    constructor() {
+    private static MSG_BAD_CONN = "bad connection";
+    constructor(private destAuthRouter: express.Router = null) {
         super();
-        this.connCount = 0;
+        this.__connCount = 0;
         this.__connections = {};
     }
-    get ConnectionsCount() : number { return this.connCount;}
-    createConnection(remoteAddress: string, cookie: any, messageCB: rcf.MessageCallback, pingIntervalMS: number) : string {
-        let conn_id = uuid.v4();
-        let conn = new TopicConnection(conn_id, remoteAddress, cookie, messageCB, pingIntervalMS);
+    get ConnectionsCount() : number { return this.__connCount;}
+    createConnection(socket: Socket, cookie: any, messageCB: rcf.MessageCallback, connKeepAliveIntervallMS: number) : string {
+        let conn_id = generate();    // generate a connection id;
+        let conn = new TopicConnection(conn_id, socket, cookie, messageCB, connKeepAliveIntervallMS);
         this.__connections[conn_id] = conn;
-        conn.onChange(() => {
+        conn.on('change', () => {
             this.emit('change');
         });
-        this.connCount++;
+        this.__connCount++;
         this.emit('change');
         return conn_id;
-    }
-    validConnection(conn_id: string) : boolean {
-        let conn = this.__connections[conn_id];
-        return (conn ? true : false);
     }
     removeConnection(conn_id: string) : void {
         let conn = this.__connections[conn_id];
         if (conn) {
             conn.end();
             delete this.__connections[conn_id];
-            this.connCount--;
+            this.__connCount--;
             this.emit('change');
         }     
     }
-    addSubscription(conn_id: string, sub_id:string, destination: string, headers:{[field: string]: any}, done?: rcf.DoneHandler)  {
-        let conn = this.__connections[conn_id];
-        if (conn) {
-            conn.addSubscription(sub_id, destination, headers, done);
-        } else {
-            if (typeof done === 'function') done(ConnectionsManager.MSG_BAD_CONN);
+    protected getConn(conn_id: string) : TopicConnection {   // might throws exception
+        if (this.__connections[conn_id])
+            return this.__connections[conn_id];
+        else
+            throw ConnectionsManager.MSG_BAD_CONN;
+    }
+    getConnection(conn_id: string) : ITopicConnection /* might throws exception */ { return this.getConn(conn_id);}
+    findConnections(criteria: (conn: ITopicConnection) => boolean) : ITopicConnection[] {
+        let ret: ITopicConnection[] = [];
+        for (let conn_id in this.__connections) {    // for each connection
+            let conn = this.__connections[conn_id];
+            if (criteria(conn)) ret.push(conn);
+        }
+        return ret;
+    }
+    addConnSubscription(conn_id: string, sub_id: string, destination: string, headers: {[field: string]: any}) : Promise<TopicConnection> {
+        return new Promise<TopicConnection>((resolve: (value: TopicConnection) => void, reject: (err: any) => void) => {
+            this.authorizeDestination(conn_id, DestAuthMode.Subscribe, destination, headers)
+            .then((conn: TopicConnection) => {
+                conn.addSubscription(sub_id, destination, headers);
+                resolve(conn);
+            }).catch((err: any) => {
+                reject(err);
+            })
+        });
+    }
+    removeConnSubscription(conn_id: string, sub_id:string) : void {   // might throws exception
+        this.getConn(conn_id).removeSubscription(sub_id);
+    }
+    dispatchMessage(destination: string, headers: {[field: string]:any}, message:any) : void {
+        for (let conn_id in this.__connections) {    // for each connection
+            let conn = this.__connections[conn_id];
+            conn.forwardMessage(destination, headers, message);
         }
     }
-    removeSubscription(conn_id: string, sub_id:string, done?: rcf.DoneHandler) {
-        let conn = this.__connections[conn_id];
-        if (conn) {
-            conn.removeSubscription(sub_id, done);
-        } else {
-            if (typeof done === 'function') done(ConnectionsManager.MSG_BAD_CONN);
-        }        
-    }
-    dispatchMessage(destination: string, headers: {[field: string]:any}, message:any, done?: rcf.DoneHandler) {
-        let left = this.connCount;
-        let errs = [];
-        for (let id in this.__connections) {    // for each connection
-            let conn = this.__connections[id];
-            conn.forwardMessage(destination, headers, message, (err: any) => {
-                left--;
-                if (err) errs.push(err);
-                if (left === 0) {
-                    if (typeof done === 'function') done(errs.length > 0 ? errs : null);
+    authorizeDestination(conn_id: string, authMode: DestAuthMode, destination: string, headers: {[field: string]: any}, body: any = null) : Promise<TopicConnection> {
+        return new Promise<any>((resolve: (value:any) => void, reject: (err:any) => void) => {
+            let conn = null;
+            try {
+                conn = this.getConn(conn_id)
+            } catch(e) {
+                reject(e);
+            }
+            if (!this.destAuthRouter)
+                resolve(conn);
+            else {
+                let defaultRejectMsg = 'not authorized to ' + authModeDescriptions[authMode] + ' on ' + destination;
+                // construct artifical req and res objects for the express router to route
+                ////////////////////////////////////////////////////////////////////////////////////////////
+                let req:any = {
+                    "method": (authMode === DestAuthMode.Subscribe ? "GET" : "POST")
+                    ,"authMode": authMode
+                    ,"destination": destination
+                    ,"headers": headers
+                    ,"url": destination
+                    ,"connection": conn
+                    ,"body": (body ? body : null)
+                };
+                let res:any = {
+                    '___err___': null
+                    ,'___result_set___': false
+                    ,'reject': function (err?) {
+                        //console.log("\n << reject() >> \n");
+                        this.___err___ = err || defaultRejectMsg;
+                        this.___result_set___ = true;
+                        finalHandler();
+                    }
+                    ,'accept': function () {
+                        //console.log("\n << accept() >> \n");
+                        this.___err___ = null;
+                        this.___result_set___ = true;
+                        finalHandler();
+                    }
+                    ,'get_err': function() {return this.___err___;}
+                    ,'result_set': function() {return this.___result_set___;}
+                };
+                ////////////////////////////////////////////////////////////////////////////////////////////
+                let finalHandler = () => {
+                    //console.log("\n << finalHandler() >> \n");
+                    if (res.result_set()) {
+                        if (res.get_err())
+                            reject(res.get_err());
+                        else
+                            resolve(conn);
+                    } else
+                        reject(defaultRejectMsg);
                 }
-            });
-        }
+                this.destAuthRouter(req, res, finalHandler);    // route it               
+            }
+        });
     }
     toJSON() : Object {
         let ret = [];
-        for (let conn_id in this.__connections) {
+        for (let conn_id in this.__connections) {    // for each connection
             let conn = this.__connections[conn_id];
             ret.push(conn.toJSON());
         }
@@ -176,11 +225,6 @@ export class ConnectionsManager extends events.EventEmitter {
 
 interface SSEResponse extends express.Response {
     sseSend: (msg:any) => void;
-}
-
-export interface ISSETopicRouter extends express.Router {
-    connectionsManager: ConnectionsManager;
-    eventEmitter: events.EventEmitter;
 }
 
 export interface EventParams {
@@ -207,122 +251,26 @@ export interface ClientSendMsgEventParams {
     };
 }
 
-function getRemoteAddress(req: express.Request) : string {
-    return req.connection.remoteAddress+':'+req.connection.remotePort.toString();
+export interface IMsgRouterReturn {
+    router: express.Router;
+    connectionsManager: IConnectionsManager;
 }
 
-function authorizeDestination(destAuthRouter: DestinationAuthRouter, authMode: DestAuthMode, conn_id: string, destination: string, headers:{[field: string]: any}, body:any, originalReq: express.Request, done: (err:any) => void) {
-    if (destAuthRouter) {
-        destAuthRouter.route(conn_id, destination, authMode, headers, body, originalReq, done);
-    } else
-        done(null);
-}
-/*
-
-export interface IDestAuthRequest {
-    method: string;
-    conn_id: string;
-    authMode: DestAuthMode;
-    headers:{[field: string]: any};
-    originalUrl: string;
-    url: string;
-    path: string;
-    body: any;
-    params: any;
-    query: any;
-    originalReq: express.Request;
-};
-
-export interface IDestAuthReqRes {
-    authReq: IDestAuthRequest;
-    authRes: IDestAuthResponse;
-};
-
-export function getDestinationAuthReqRes(req: express.Request, res: express.Response) : IDestAuthReqRes {
-    let authReq: any = req;
-    let authRes:any = res;
-    return {authReq, authRes};
-}
-
-function authorizeDestination(authApp:any, authMode: DestAuthMode, conn_id: string, destination: string, headers:{[field: string]: any}, body:any, originalReq: express.Request, done: (err:any) => void) {
-	if (authApp) {
-        // construct artifical req and res objects for the destination auth. express app to route
-        //////////////////////////////////////////////////////////////////////////////////////////
-		let req = {
-			"method": "GET"
-            ,"conn_id": conn_id
-            ,"authMode": authMode
-            ,"headers": headers
-			,"url": destination
-			,"originalReq": (originalReq ? originalReq : null)
-            ,"body": (body ? body : null)
-            ,"toJSON": function() {
-                return {
-                    "method": this.method
-                    ,"conn_id": this.conn_id
-                    ,"authMode": this.authMode
-                    ,"headers": this.headers
-                    ,"originalUrl": this.originalUrl
-                    ,"url": this.destination
-                    ,"path": this.path
-                    ,"body": this.body
-                    ,"params": this.params
-                    ,"query": this.query
-                };
-            }
-		};
-		let res = {
-            '___err___': null
-			,'setHeader': (fld, value) => {}
-			,'reject': function (err) {
-                console.log("\n << reject() >> \n");
-                this.___err___ = err;
-                finalHandler();
-            }
-			,'accept': function () {
-                console.log("\n << accept() >> \n");
-                this.___err___ = null;
-                finalHandler();
-            }
-            ,'get_err': function() {return this.___err___;}
-		};
-        //////////////////////////////////////////////////////////////////////////////////////////
-        let finalHandler = () => {
-            console.log("\n << finalHandler() >> \n");
-            done(res.get_err());
-        }
-		authApp(req, res, finalHandler);    // route it
-	} else {
-		done(null);
-	}
-}
-*/
-
-
-// router.eventEmitter emit the following events
-// 1. sse_connect (EventParams)
-// 2. sse_disconnect (EventParams)
-// 3. client_connect (ConnectedEventParams)
-// 4. client_disconnect (ConnectedEventParams)
-// 5. client_cmd (CommandEventParams)
-// 6. on_client_send_msg (ClientSendMsgEventParams)
-export function getRouter(eventPath: string, options?: Options) : ISSETopicRouter {
+export function get(eventPath: string, options?: Options) : IMsgRouterReturn {
     options = options || defaultOptions;
     options = _.assignIn({}, defaultOptions, options);
     
-    let router: ISSETopicRouter  = <ISSETopicRouter>express.Router();
+    let connectionsManager = new ConnectionsManager(options.destinationAuthorizeRouter);
+    let router = express.Router();
     router.use(bodyParser.json({'limit': '100mb'}));
-    let connectionsManager = new ConnectionsManager();
-    router.connectionsManager = connectionsManager;
-    router.eventEmitter = new events.EventEmitter();
-    
+
     // server side events streaming
     router.get(eventPath, (req: express.Request, res: SSEResponse) => {
-        let cookie = (options.cookieSetter ? options.cookieSetter(req) : null);
-        let remoteAddress = getRemoteAddress(req);
+        let cookie = (options.connCookieMaker ? options.connCookieMaker(req) : null);
+        let remoteAddress = req.connection.remoteAddress;
         let ep: EventParams = {req, remoteAddress};
 
-        router.eventEmitter.emit('sse_connect', ep);    // fire the "sse_connect" event
+        connectionsManager.emit('sse_connect', ep);    // fire the "sse_connect" event
         
         // init SSE
         ///////////////////////////////////////////////////////////////////////
@@ -338,91 +286,73 @@ export function getRouter(eventPath: string, options?: Options) : ISSETopicRoute
             if (event) s += "event: " + event.toString() + "\n";
             s+= "data: " + JSON.stringify(data) + "\n\n";
             res.write(s);
-            router.eventEmitter.emit('sse_send', s);
+            connectionsManager.emit('sse_send', s);
         }
         res.write('\n');
         ///////////////////////////////////////////////////////////////////////
 		
         // create a connection
         ///////////////////////////////////////////////////////////////////////
-        let conn_id = connectionsManager.createConnection(remoteAddress, cookie, (msg: rcf.IMessage) => {
+        let conn_id = connectionsManager.createConnection(req.connection, cookie, (msg: rcf.IMessage) => {
             res.sseSend(msg);
-        }, options.pingIntervalMS);
+        }, options.connKeepAliveIntervalMS);
         ///////////////////////////////////////////////////////////////////////
 
         let cep: ConnectedEventParams = {req, remoteAddress, conn_id};
 
-        router.eventEmitter.emit('client_connect', cep);    // fire the "client_connect" event
-        		
+        connectionsManager.emit('client_connect', cep);    // fire the "client_connect" event
+
         // The 'close' event is fired when a user closes their browser window.
         req.on("close", () => {
-            router.eventEmitter.emit('sse_disconnect', ep); // fire the "sse_disconnect" event
+            connectionsManager.emit('sse_disconnect', ep); // fire the "sse_disconnect" event
             if (conn_id.length > 0) {
                 connectionsManager.removeConnection(conn_id);
-                router.eventEmitter.emit('client_disconnect', cep); // fire the "client_disconnect" event
+                connectionsManager.emit('client_disconnect', cep); // fire the "client_disconnect" event
             }
         });
     });
     
     router.post(eventPath + '/subscribe', (req: express.Request, res: express.Response) => {
-        let remoteAddress = getRemoteAddress(req);
+        let remoteAddress = req.connection.remoteAddress;
         let data = req.body;
         let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'subscribe', data};
-        router.eventEmitter.emit('client_cmd', cep);
-        authorizeDestination(options.destinationAuthorizeRouter, DestAuthMode.Subscribe, data.conn_id, data.destination, data.headers, null, req, (err:any) => {
-            if (err)
-                res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
-            else {
-                connectionsManager.addSubscription(data.conn_id, data.sub_id, data.destination, data.headers, (err: any) => {
-                    if (err)
-                        res.status(400).json({exception: JSON.parse(JSON.stringify(err))});
-                    else
-                        res.jsonp({});
-                });
-            }
+        connectionsManager.emit('client_cmd', cep);
+        connectionsManager.addConnSubscription(data.conn_id, data.sub_id, data.destination, data.headers)
+        .then(() => {
+            res.jsonp({});
+        }).catch((err:any) => {
+            res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
         });
     });
 
     router.get(eventPath + '/unsubscribe', (req: express.Request, res: express.Response) => {
-        let remoteAddress = getRemoteAddress(req);
+        let remoteAddress = req.connection.remoteAddress;
         let data = req.query;
         let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'unsubscribe', data};
-        router.eventEmitter.emit('client_cmd', cep);
-        connectionsManager.removeSubscription(data.conn_id, data.sub_id, (err: any) => {
-            if (err)
-                res.status(400).json({exception: JSON.parse(JSON.stringify(err))});
-            else
-                res.jsonp({});
-        });
-    });
-
-    router.post(eventPath + '/send', (req: express.Request, res: express.Response) => {
-        let remoteAddress = getRemoteAddress(req);
-        let data = req.body;
-        let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'send', data};
-        router.eventEmitter.emit('client_cmd', cep);
-        if (connectionsManager.validConnection(data.conn_id)) { // make sure the connection is valid
-            authorizeDestination(options.destinationAuthorizeRouter, DestAuthMode.SendMsg, data.conn_id, data.destination, data.headers, data.body, req, (err:any) => {
-                if (err)
-                    res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
-                else {
-                    let ev: ClientSendMsgEventParams = {req, conn_id: data.conn_id, data:{destination: data.destination, headers: data.headers, body: data.body}};
-                    router.eventEmitter.emit('on_client_send_msg', ev);
-                    if (options.dispatchMsgOnClientSend) {
-                        connectionsManager.dispatchMessage(data.destination, data.headers, data.body, (err: any) => {
-                            if (err)
-                                res.status(400).json({exception: JSON.parse(JSON.stringify(err))});
-                            else
-                                res.jsonp({});
-                        });
-                    } else
-                        res.jsonp({});
-                }
-            });
-        } else {
-            res.status(400).json({exception: ConnectionsManager.MSG_BAD_CONN});
+        connectionsManager.emit('client_cmd', cep);
+        try {
+            connectionsManager.removeConnSubscription(data.conn_id, data.sub_id);
+            res.jsonp({});
+        } catch (e) {
+            res.status(400).json({exception: JSON.parse(JSON.stringify(e))});
         }
     });
 
-    return router;
+    router.post(eventPath + '/send', (req: express.Request, res: express.Response) => {
+        let remoteAddress = req.connection.remoteAddress;
+        let data = req.body;
+        let cep: CommandEventParams = {req, remoteAddress, conn_id: data.conn_id, cmd: 'send', data};
+        connectionsManager.emit('client_cmd', cep);
+        connectionsManager.authorizeDestination(data.conn_id, DestAuthMode.SendMsg, data.destination, data.headers, data.body)
+        .then(() => {
+            let ev: ClientSendMsgEventParams = {req, conn_id: data.conn_id, data:{destination: data.destination, headers: data.headers, body: data.body}};
+            connectionsManager.emit('on_client_send_msg', ev);
+            if (options.dispatchMsgOnClientSend) connectionsManager.dispatchMessage(data.destination, data.headers, data.body);
+            res.jsonp({});
+        }).catch((err:any) => {
+            res.status(403).json({exception: JSON.parse(JSON.stringify(err))});
+        });
+    });
+
+    return {router, connectionsManager};
 }

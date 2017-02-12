@@ -1,6 +1,6 @@
 {
-  "name": "rcf-message-router",
-  "version": "0.0.21",
+  "name": "rcf-message-router-2",
+  "version": "0.0.30",
   "description": "RCF Message Notification Router",
   "main": "./js/index.js",
   "typings": "./js/index.d.ts",
@@ -13,20 +13,22 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/wchang28/rcf-message-router.git"
+    "url": "https://github.com/wchang28/rcf-message-router-2.git"
   },
   "author": "Wen Chang",
   "license": "MIT",
   "dependencies": {
     "@types/body-parser": "0.0.33",
     "@types/express": "^4.0.33",
+    "@types/lodash": "^4.14.52",
     "@types/node": "^6.0.42",
-    "@types/node-uuid": "0.0.28",
+    "@types/shortid": "0.0.28",
     "alasql": "^0.3.1",
     "body-parser": "^1.15.2",
     "express": "^4.14.0",
-    "my-router": "^1.1.1-rc1",
+    "lodash": "^4.17.4",
     "node-uuid": "^1.4.7",
-    "rcf": "git+https://github.com/wchang28/rcf.git"
+    "rcf": "git+https://github.com/wchang28/rcf.git",
+    "shortid": "^2.2.6"
   }
 }

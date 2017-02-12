@@ -2,57 +2,75 @@ import * as rcf from 'rcf';
 import * as events from 'events';
 import * as _ from 'lodash';
 let alasql = require('alasql');
+import {Socket} from 'net';
 
-interface Subscription {
-	destination: string;
-	headers?: {[field: string]: any};
+export interface Subscription {
+	dest: string;
+	hdrs?: {[field: string]: any};
 }
 
-export class TopicConnection extends events.EventEmitter {
-	public conn_id: string;
-	public remoteAddress: string
-	public cookie: any
-	private eventEmitter: events.EventEmitter;
-	private subscriptions: {[sub_id:string] : Subscription;}
-	private pintInterval: NodeJS.Timer;
-	constructor(conn_id: string, remoteAddress: string, cookie: any, messageCB: rcf.MessageCallback, public pingIntervalMS:number = 10000) {
+export interface ITopicConnection {
+	readonly id: string;
+	cookie: any;
+	readonly remoteAddress: string
+	readonly remotePort: number;
+	readonly remoteFamily: string;
+	readonly localAddress: string;
+    readonly bytesRead: number;
+    readonly bytesWritten: number;
+    readonly destroyed: boolean;
+	destroy: () => void;
+	toJSON: () => Object;
+}
+
+// this class emits the following events
+// 1. change
+// 2. message
+export class TopicConnection extends events.EventEmitter implements ITopicConnection {
+	private i: string;	// connection id
+	private s: Socket;	// socket connection
+	private k: any;	// cookie
+	private u: {[sub_id:string] : Subscription;}	// topic subscriptions
+	private a: NodeJS.Timer;	// keep alive timer
+	constructor(conn_id: string, socket: Socket, cookie: any, messageCB: rcf.MessageCallback, keepAliveIntervalMS: number = 30000) {
 		super();
-		this.conn_id = conn_id;
-		this.remoteAddress = remoteAddress;
-		this.cookie = cookie;
-		
-		this.eventEmitter = new events.EventEmitter();
-		this.eventEmitter.on('message', messageCB);
-		this.subscriptions = {};
-		if (this.pingIntervalMS > 0) {
-			this.pintInterval = setInterval(() => {
+		this.i = conn_id;
+		this.s = socket;
+		this.k = cookie;
+		this.on('message', messageCB);
+		this.u = {};
+		if (typeof keepAliveIntervalMS === 'number' && keepAliveIntervalMS > 0) {
+			this.a = setInterval(() => {
+				// emit a keep-alive ping message on the connection
+				/////////////////////////////////////////////////////
 				let msg:rcf.IMessage = {
 					headers: {
 						event: rcf.MessageEventType.PING
 					}
 				};
-				this.eventEmitter.emit('message', msg);
-			}, this.pingIntervalMS);
+				this.emitMessage(msg);
+				/////////////////////////////////////////////////////
+			}, keepAliveIntervalMS);
+		} else {
+			this.a = null;
 		}
-		// emit a 'connected' message
+		// emit a 'connected' message on the connection
 		/////////////////////////////////////////////////////////
         let msg : rcf.IMessage = {
-            headers:
-            {
+            headers: {
                 event: rcf.MessageEventType.CONNECT,
                 conn_id: conn_id
             }
 	    };
-		this.eventEmitter.emit('message', msg);
+		this.emitMessage(msg);
 		/////////////////////////////////////////////////////////
 	}
-	onChange(handler: () => void) {
-		this.on('change', handler);
-	}
-	forwardMessage(destination: string, headers: {[field: string]: any}, message: any, done: rcf.DoneHandler) : void {
-        for (var sub_id in this.subscriptions) {	// for each subscription this connection has
-			let subscription = this.subscriptions[sub_id];
-			let pattern = new RegExp(subscription.destination, 'gi');
+	triggerChangeEvent() : void {this.emit('change');}
+	private emitMessage(msg: rcf.IMessage) : void {this.emit('message', msg);}
+	forwardMessage(destination: string, headers: {[field: string]: any}, message: any) : void {
+        for (let sub_id in this.u) {	// for each subscription this connection has
+			let subscription = this.u[sub_id];
+			let pattern = new RegExp(subscription.dest, 'gi');
 			if (destination.match(pattern)) {	// matching destination
                 let msg: rcf.IMessage = {
                    headers: {
@@ -63,53 +81,75 @@ export class TopicConnection extends events.EventEmitter {
                    body: message
                 };
 				if (headers) {
-					for (var field in headers) {
+					for (let field in headers) {
 						if (!msg.headers[field])
 							msg.headers[field] = headers[field];
 					}
 				}
-				if (subscription.headers && subscription.headers['selector'] && typeof subscription.headers['selector'] === 'string' && subscription.headers['selector'].length > 0) {
-					let selector: string = subscription.headers['selector'];
+				if (subscription.hdrs && subscription.hdrs['selector'] && typeof subscription.hdrs['selector'] === 'string' && subscription.hdrs['selector'].length > 0) {
+					let selector: string = subscription.hdrs['selector'];
 					let msgHeaders: any = msg.headers;
 					let sql = "select * from ? where " + selector;
 					try {
-						var res = alasql(sql, [[msgHeaders]]);
-						if (res.length > 0) this.eventEmitter.emit('message', msg);
+						let res = alasql(sql, [[msgHeaders]]);
+						if (res.length > 0) this.emitMessage(msg);
 					} catch (e) {
-						this.eventEmitter.emit('message', msg);
+						this.emitMessage(msg);
 					}
 				} else
-					this.eventEmitter.emit('message', msg);
+					this.emitMessage(msg);
             }
 		}
-		if (typeof done === 'function') done(null);
 	}
-	addSubscription(sub_id: string, destination: string, headers: {[field: string]: any}, done: rcf.DoneHandler) : void {
+	get subscriptions() : {[sub_id:string] : Subscription;} {return _.cloneDeep(this.u);}
+	addSubscription(sub_id: string, destination: string, headers: {[field: string]: any}) : void {
 		let subscription: Subscription = {
-			destination: destination
-			,headers: headers
+			dest: destination
+			,hdrs: headers
 		};
-		this.subscriptions[sub_id] = subscription;
-		this.emit('change');
-		if (typeof done === 'function') done(null);
+		this.u[sub_id] = subscription;
+		this.triggerChangeEvent();
 	}
-	removeSubscription(sub_id: string, done: rcf.DoneHandler) : void {
-		delete this.subscriptions[sub_id];
-		this.emit('change');
-		if (typeof done === 'function') done(null);
-	}
-	end () : void {
-		if (this.pintInterval) {
-			clearInterval(this.pintInterval);
-			this.pintInterval = null;
-			this.subscriptions = {};
-			this.emit('change');
+	removeSubscription(sub_id: string) : void {	// might throws exception
+		if (this.u[sub_id]) {
+			delete this.u[sub_id];
+			this.triggerChangeEvent();
+		} else {
+			throw "bad subscription id";
 		}
 	}
+	end () : void {
+		if (this.a) {
+			clearInterval(this.a);
+			this.a = null;
+			this.u = {};
+			this.triggerChangeEvent();
+		}
+	}
+	get id() : string {return this.i;}
+	get cookie() : any {return this.k;}
+	set cookie(value: any) {
+		if (value !== this.k) {
+			this.k = value;
+			this.triggerChangeEvent();
+		}
+	}
+
+	get remoteAddress() : string {return this.s.remoteAddress;};
+	get remotePort() : number {return this.s.remotePort;};
+	get remoteFamily() : string {return this.s.remoteFamily;}
+	get localAddress() : string {return this.s.localAddress;}
+	get localPort(): number {return this.s.localPort;}
+    get bytesRead() : number {return this.s.bytesRead;}
+	get bytesWritten() : number {return this.s.bytesWritten;}
+    get destroyed() : boolean {return this.s.destroyed;}
+	destroy() : void {this.s.destroy;}
+	
 	toJSON() : Object {
 		let o = {
-			conn_id: this.conn_id
+			id: this.id
 			,remoteAddress: this.remoteAddress
+			,remotePort: this.remotePort
 			,cookie: this.cookie
 			,subscriptions: this.subscriptions
 		}
