@@ -24,10 +24,12 @@ export interface DestAuthRequest {
     };
     originalUrl: string;
     url: string;
+    baseUrl: string;
     body: any;
     params: any;
     query: any;
     connection: ITopicConnection;
+    path: string;
 }
 export interface DestAuthResponse {
     reject: (err?: any) => void;

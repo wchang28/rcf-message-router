@@ -42,10 +42,12 @@ export interface DestAuthRequest {
     headers:{[field: string]: any};
     originalUrl: string;
     url: string;
+    baseUrl: string;
     body: any;
     params: any;
     query: any;
     connection: ITopicConnection;
+    path: string;
 };
 
 export interface DestAuthResponse {
@@ -179,6 +181,7 @@ class ConnectionsManager extends events.EventEmitter implements IConnectionsMana
                     ,"url": destination
                     ,"connection": conn
                     ,"body": (body ? body : null)
+                    ,"path": destination
                 };
                 let res:any = {
                     '___err___': null

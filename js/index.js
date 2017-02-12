@@ -140,7 +140,8 @@ var ConnectionsManager = (function (_super) {
                     "headers": headers,
                     "url": destination,
                     "connection": conn,
-                    "body": (body ? body : null)
+                    "body": (body ? body : null),
+                    "path": destination
                 };
                 var res_1 = {
                     '___err___': null,
