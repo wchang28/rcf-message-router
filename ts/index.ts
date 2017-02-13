@@ -248,10 +248,6 @@ export function get(eventPath: string, options?: Options) : IMsgRouterReturn {
 
     // server side events streaming
     router.get(eventPath, (req: express.Request, res: SSEResponse) => {
-        let cookie = (options.connCookieMaker ? options.connCookieMaker(req) : null);
-        let remoteAddress = req.connection.remoteAddress;
-        let remotePort = req.connection.remotePort;
-
         // init SSE
         ///////////////////////////////////////////////////////////////////////
         //send headers for event-stream connection
@@ -273,6 +269,7 @@ export function get(eventPath: string, options?: Options) : IMsgRouterReturn {
 		
         // create a connection
         ///////////////////////////////////////////////////////////////////////
+        let cookie = (options.connCookieMaker ? options.connCookieMaker(req) : null);
         let conn = connectionsManager.createConnection(req.connection, cookie, (msg: rcf.IMessage) => {
             res.sseSend(msg);
         }, options.connKeepAliveIntervalMS);

@@ -193,9 +193,6 @@ function get(eventPath, options) {
     router.use(bodyParser.json({ 'limit': '100mb' }));
     // server side events streaming
     router.get(eventPath, function (req, res) {
-        var cookie = (options.connCookieMaker ? options.connCookieMaker(req) : null);
-        var remoteAddress = req.connection.remoteAddress;
-        var remotePort = req.connection.remotePort;
         // init SSE
         ///////////////////////////////////////////////////////////////////////
         //send headers for event-stream connection
@@ -217,6 +214,7 @@ function get(eventPath, options) {
         ///////////////////////////////////////////////////////////////////////
         // create a connection
         ///////////////////////////////////////////////////////////////////////
+        var cookie = (options.connCookieMaker ? options.connCookieMaker(req) : null);
         var conn = connectionsManager.createConnection(req.connection, cookie, function (msg) {
             res.sseSend(msg);
         }, options.connKeepAliveIntervalMS);
