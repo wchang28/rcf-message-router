@@ -36,13 +36,11 @@ function destAuth(handler) {
 exports.destAuth = destAuth;
 // this class emits the following events
 // 1. change
-// 2. sse_connect (req, remoteAddress, remotePort)
-// 3. sse_disconnect (req, remoteAddress, remotePort)
-// 4. client_connect (req, ITopicConnection)
-// 5. client_disconnect (req, ITopicConnection)
-// 6. client_cmd (req, ClientCommandType, conn_id, data)
-// 7. on_client_send_msg (req, ITopicConnection, SendMsgParams)
-// 8. sse_send (req, string)
+// 2. client_connect (req, ITopicConnection)
+// 3. client_disconnect (req, ITopicConnection)
+// 4. client_cmd (req, ClientCommandType, conn_id, data)
+// 5. on_client_send_msg (req, ITopicConnection, SendMsgParams)
+// 6. sse_send (req, string)
 var ConnectionsManager = (function (_super) {
     __extends(ConnectionsManager, _super);
     function ConnectionsManager(destAuthRouter) {
@@ -198,7 +196,6 @@ function get(eventPath, options) {
         var cookie = (options.connCookieMaker ? options.connCookieMaker(req) : null);
         var remoteAddress = req.connection.remoteAddress;
         var remotePort = req.connection.remotePort;
-        connectionsManager.emit('sse_connect', req, remoteAddress, remotePort); // fire the "sse_connect" event
         // init SSE
         ///////////////////////////////////////////////////////////////////////
         //send headers for event-stream connection
@@ -224,13 +221,12 @@ function get(eventPath, options) {
             res.sseSend(msg);
         }, options.connKeepAliveIntervalMS);
         ///////////////////////////////////////////////////////////////////////
-        connectionsManager.emit('client_connect', req, conn); // fire the "client_connect" event
         // The 'close' event is fired when a user closes their browser window.
         req.on("close", function () {
-            connectionsManager.emit('sse_disconnect', req, remoteAddress, remotePort); // fire the "sse_disconnect" event
             connectionsManager.removeConnection(conn.id);
             connectionsManager.emit('client_disconnect', req, conn); // fire the "client_disconnect" event
         });
+        connectionsManager.emit('client_connect', req, conn); // fire the "client_connect" event
     });
     router.post(eventPath + '/subscribe', function (req, res) {
         var data = req.body;

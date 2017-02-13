@@ -69,13 +69,11 @@ export function destAuth(handler: DestAuthRequestHandler) : express.RequestHandl
 
 // this interface emits the following events
 // 1. change
-// 2. sse_connect (req, remoteAddress, remotePort)
-// 3. sse_disconnect (req, remoteAddress, remotePort)
-// 4. client_connect (req, ITopicConnection)
-// 5. client_disconnect (req, ITopicConnection)
-// 6. client_cmd (req, ClientCommandType, conn_id, data)
-// 7. on_client_send_msg (req, ITopicConnection, SendMsgParams)
-// 8. sse_send (req, string)
+// 2. client_connect (req, ITopicConnection)
+// 3. client_disconnect (req, ITopicConnection)
+// 4. client_cmd (req, ClientCommandType, conn_id, data)
+// 5. on_client_send_msg (req, ITopicConnection, SendMsgParams)
+// 6. sse_send (req, string)
 export interface IConnectionsManager {
     readonly ConnectionsCount: number;
     getConnection: (conn_id: string) => ITopicConnection;
@@ -87,13 +85,11 @@ export interface IConnectionsManager {
 
 // this class emits the following events
 // 1. change
-// 2. sse_connect (req, remoteAddress, remotePort)
-// 3. sse_disconnect (req, remoteAddress, remotePort)
-// 4. client_connect (req, ITopicConnection)
-// 5. client_disconnect (req, ITopicConnection)
-// 6. client_cmd (req, ClientCommandType, conn_id, data)
-// 7. on_client_send_msg (req, ITopicConnection, SendMsgParams)
-// 8. sse_send (req, string)
+// 2. client_connect (req, ITopicConnection)
+// 3. client_disconnect (req, ITopicConnection)
+// 4. client_cmd (req, ClientCommandType, conn_id, data)
+// 5. on_client_send_msg (req, ITopicConnection, SendMsgParams)
+// 6. sse_send (req, string)
 class ConnectionsManager extends events.EventEmitter implements IConnectionsManager {
     private __connCount: number;
     private __connections : {[conn_id: string]: TopicConnection;}
@@ -256,8 +252,6 @@ export function get(eventPath: string, options?: Options) : IMsgRouterReturn {
         let remoteAddress = req.connection.remoteAddress;
         let remotePort = req.connection.remotePort;
 
-        connectionsManager.emit('sse_connect', req, remoteAddress, remotePort);    // fire the "sse_connect" event
-        
         // init SSE
         ///////////////////////////////////////////////////////////////////////
         //send headers for event-stream connection
@@ -284,14 +278,13 @@ export function get(eventPath: string, options?: Options) : IMsgRouterReturn {
         }, options.connKeepAliveIntervalMS);
         ///////////////////////////////////////////////////////////////////////
 
-        connectionsManager.emit('client_connect', req, conn);    // fire the "client_connect" event
-
         // The 'close' event is fired when a user closes their browser window.
         req.on("close", () => {
-            connectionsManager.emit('sse_disconnect', req, remoteAddress, remotePort); // fire the "sse_disconnect" event
             connectionsManager.removeConnection(conn.id);
             connectionsManager.emit('client_disconnect', req, conn); // fire the "client_disconnect" event
         });
+
+        connectionsManager.emit('client_connect', req, conn);    // fire the "client_connect" event
     });
     
     router.post(eventPath + '/subscribe', (req: express.Request, res: express.Response) => {
