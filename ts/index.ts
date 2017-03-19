@@ -94,6 +94,7 @@ class ConnectionsManager extends events.EventEmitter implements IConnectionsMana
     private __connCount: number;
     private __connections : {[conn_id: string]: TopicConnection;}
     private static MSG_BAD_CONN = "bad connection";
+    private static MSG_BAD_DESTINATION = "bad destination";
     constructor(private destAuthRouter: express.Router = null) {
         super();
         this.__connCount = 0;
@@ -137,13 +138,22 @@ class ConnectionsManager extends events.EventEmitter implements IConnectionsMana
     }
     addConnSubscription(conn_id: string, sub_id: string, destination: string, headers: {[field: string]: any}) : Promise<TopicConnection> {
         return new Promise<TopicConnection>((resolve: (value: TopicConnection) => void, reject: (err: any) => void) => {
-            this.authorizeDestination(conn_id, DestAuthMode.Subscribe, destination, headers)
-            .then((conn: TopicConnection) => {
-                conn.addSubscription(sub_id, destination, headers);
-                resolve(conn);
-            }).catch((err: any) => {
-                reject(err);
-            })
+            if (!destination || destination.length == 0)
+                reject(ConnectionsManager.MSG_BAD_DESTINATION);
+            else {
+                // remove trailing '/'
+                ///////////////////////////////////////////////////////////////////////////////////////////////////////
+                let c = destination.charAt(destination.length-1);
+                if (c == '/' && destination.length > 1) destination = destination.substr(0, destination.length - 1);
+                ///////////////////////////////////////////////////////////////////////////////////////////////////////
+                this.authorizeDestination(conn_id, DestAuthMode.Subscribe, destination, headers)
+                .then((conn: TopicConnection) => {
+                    conn.addSubscription(sub_id, destination, headers);
+                    resolve(conn);
+                }).catch((err: any) => {
+                    reject(err);
+                });
+            };
         });
     }
     removeConnSubscription(conn_id: string, sub_id:string) : void {   // might throws exception

@@ -96,13 +96,24 @@ var ConnectionsManager = (function (_super) {
     ConnectionsManager.prototype.addConnSubscription = function (conn_id, sub_id, destination, headers) {
         var _this = this;
         return new Promise(function (resolve, reject) {
-            _this.authorizeDestination(conn_id, DestAuthMode.Subscribe, destination, headers)
-                .then(function (conn) {
-                conn.addSubscription(sub_id, destination, headers);
-                resolve(conn);
-            }).catch(function (err) {
-                reject(err);
-            });
+            if (!destination || destination.length == 0)
+                reject(ConnectionsManager.MSG_BAD_DESTINATION);
+            else {
+                // remove trailing '/'
+                ///////////////////////////////////////////////////////////////////////////////////////////////////////
+                var c = destination.charAt(destination.length - 1);
+                if (c == '/' && destination.length > 1)
+                    destination = destination.substr(0, destination.length - 1);
+                ///////////////////////////////////////////////////////////////////////////////////////////////////////
+                _this.authorizeDestination(conn_id, DestAuthMode.Subscribe, destination, headers)
+                    .then(function (conn) {
+                    conn.addSubscription(sub_id, destination, headers);
+                    resolve(conn);
+                }).catch(function (err) {
+                    reject(err);
+                });
+            }
+            ;
         });
     };
     ConnectionsManager.prototype.removeConnSubscription = function (conn_id, sub_id) {
@@ -185,6 +196,7 @@ var ConnectionsManager = (function (_super) {
     return ConnectionsManager;
 }(events.EventEmitter));
 ConnectionsManager.MSG_BAD_CONN = "bad connection";
+ConnectionsManager.MSG_BAD_DESTINATION = "bad destination";
 function get(eventPath, options) {
     options = options || defaultOptions;
     options = _.assignIn({}, defaultOptions, options);
