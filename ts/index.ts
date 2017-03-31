@@ -68,12 +68,12 @@ export function destAuth(handler: DestAuthRequestHandler) : express.RequestHandl
 }
 
 // this interface emits the following events
-// 1. change
-// 2. client_connect (req, ITopicConnection)
-// 3. client_disconnect (req, ITopicConnection)
-// 4. client_cmd (req, ClientCommandType, conn_id, data)
-// 5. on_client_send_msg (req, ITopicConnection, SendMsgParams)
-// 6. sse_send (req, string)
+// 1. change ()
+// 2. client_connect (req: express.Request, conn: ITopicConnection)
+// 3. client_disconnect (req: express.Request, conn: ITopicConnection)
+// 4. client_cmd (req: express.Request, cmdType: ClientCommandType, conn_id: string, data: any)
+// 5. on_client_send_msg (req: express.Request, conn: ITopicConnection, SendMsgParams)
+// 6. sse_send (req: express.Request, s: string)
 export interface IConnectionsManager {
     readonly ConnectionsCount: number;
     getConnection: (conn_id: string) => ITopicConnection;
@@ -84,12 +84,12 @@ export interface IConnectionsManager {
 }
 
 // this class emits the following events
-// 1. change
-// 2. client_connect (req, ITopicConnection)
-// 3. client_disconnect (req, ITopicConnection)
-// 4. client_cmd (req, ClientCommandType, conn_id, data)
-// 5. on_client_send_msg (req, ITopicConnection, SendMsgParams)
-// 6. sse_send (req, string)
+// 1. change ()
+// 2. client_connect (req: express.Request, conn: ITopicConnection)
+// 3. client_disconnect (req: express.Request, conn: ITopicConnection)
+// 4. client_cmd (req: express.Request, cmdType: ClientCommandType, conn_id: string, data: any)
+// 5. on_client_send_msg (req: express.Request, conn: ITopicConnection, SendMsgParams)
+// 6. sse_send (req: express.Request, s: string)
 class ConnectionsManager extends events.EventEmitter implements IConnectionsManager {
     private __connCount: number;
     private __connections : {[conn_id: string]: TopicConnection;}

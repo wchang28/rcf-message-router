@@ -1,9 +1,15 @@
 "use strict";
-var __extends = (this && this.__extends) || function (d, b) {
-    for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
-    function __() { this.constructor = d; }
-    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
-};
+var __extends = (this && this.__extends) || (function () {
+    var extendStatics = Object.setPrototypeOf ||
+        ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
+        function (d, b) { for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p]; };
+    return function (d, b) {
+        extendStatics(d, b);
+        function __() { this.constructor = d; }
+        d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
 var shortid_1 = require("shortid");
 var events = require("events");
 var express = require("express");
@@ -35,12 +41,12 @@ function destAuth(handler) {
 }
 exports.destAuth = destAuth;
 // this class emits the following events
-// 1. change
-// 2. client_connect (req, ITopicConnection)
-// 3. client_disconnect (req, ITopicConnection)
-// 4. client_cmd (req, ClientCommandType, conn_id, data)
-// 5. on_client_send_msg (req, ITopicConnection, SendMsgParams)
-// 6. sse_send (req, string)
+// 1. change ()
+// 2. client_connect (req: express.Request, conn: ITopicConnection)
+// 3. client_disconnect (req: express.Request, conn: ITopicConnection)
+// 4. client_cmd (req: express.Request, cmdType: ClientCommandType, conn_id: string, data: any)
+// 5. on_client_send_msg (req: express.Request, conn: ITopicConnection, SendMsgParams)
+// 6. sse_send (req: express.Request, s: string)
 var ConnectionsManager = (function (_super) {
     __extends(ConnectionsManager, _super);
     function ConnectionsManager(destAuthRouter) {

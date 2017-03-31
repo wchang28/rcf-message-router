@@ -75,8 +75,8 @@ export class TopicConnection extends events.EventEmitter implements ITopicConnec
 		/////////////////////////////////////////////////////////
 		let msg : rcf.IMessage = {
 			headers: {
-				event: rcf.MessageEventType.CONNECT,
-				conn_id: conn_id
+				event: rcf.MessageEventType.CONNECT
+				,conn_id
 			}
 		};
 		this.emitMessage(msg);
@@ -84,36 +84,53 @@ export class TopicConnection extends events.EventEmitter implements ITopicConnec
 	}
 	triggerChangeEvent() : void {this.emit('change');}
 	private emitMessage(msg: rcf.IMessage) : void {this.emit('message', msg);}
+	private destinationMatched(destinationSubscribed: string, destinationMsg: string): boolean {
+		let s_sub = (destinationSubscribed.charAt(destinationSubscribed.length-1) === "/" ? destinationSubscribed : destinationSubscribed + "/");	// make sure subscribed destination terminates with '/'
+		let s_msg = (destinationMsg.charAt(destinationMsg.length-1) === "/" ? destinationMsg : destinationMsg + "/");	// make sure msg destination terminates with '/'
+		if (s_msg.length < s_sub.length)	// subscription is "deeper" then msg destination
+			return false;
+		else	// s_msg.length >= s_sub.length
+			return (s_msg.toLowerCase().substr(0, s_sub.length) === s_sub.toLowerCase());	//  msg destination is a sub-path of subscription
+	}
+	// build the message structure for dispatching
+	private buildMsgForDispatching(sub_id: string, destination: string, headers: {[field: string]: any}, message: any) : rcf.IMessage {
+		let msg: rcf.IMessage = {
+			headers: {
+				event: rcf.MessageEventType.MESSAGE
+				,sub_id
+				,destination
+			}
+			,body: message
+		};
+		if (headers) {
+			for (let field in headers) {
+				if (!msg.headers[field])
+					msg.headers[field] = headers[field];
+			}
+		}
+		return msg;
+	}
+	// returns the 'selector' header for the subscription, returns null if it doesn't have one 
+	private getSubscriptionSelector(subscription: Subscription) : string {
+		if (subscription && subscription.hdrs && subscription.hdrs['selector'] && typeof subscription.hdrs['selector'] === 'string' && subscription.hdrs['selector'].length > 0)
+			return subscription.hdrs['selector'];
+		else
+			return null;
+	}
 	forwardMessage(destination: string, headers: {[field: string]: any}, message: any) : void {
 		for (let sub_id in this.u) {	// for each subscription this connection has
 			let subscription = this.u[sub_id];
-			let pattern = new RegExp(subscription.dest, 'gi');
-			if (destination.match(pattern)) {	// matching destination
-				let msg: rcf.IMessage = {
-					headers: {
-						event: rcf.MessageEventType.MESSAGE,
-						sub_id: sub_id,
-						destination: destination
-					},
-					body: message
-				};
-				if (headers) {
-					for (let field in headers) {
-						if (!msg.headers[field])
-							msg.headers[field] = headers[field];
-					}
-				}
-				if (subscription.hdrs && subscription.hdrs['selector'] && typeof subscription.hdrs['selector'] === 'string' && subscription.hdrs['selector'].length > 0) {
-					let selector: string = subscription.hdrs['selector'];
+			if (this.destinationMatched(subscription.dest, destination)) {	// destination matched for the subscription
+				let msg = this.buildMsgForDispatching(sub_id, destination, headers, message); // construct the message for dispatching
+				let selector = this.getSubscriptionSelector(subscription);	// get the msg filter/selector for the subscription
+				if (selector) {	// msg filter/selector exists for the subscription
 					let msgHeaders: any = msg.headers;
 					let sql = "select * from ? where " + selector;
 					try {
 						let res = alasql(sql, [[msgHeaders]]);
-						if (res.length > 0) this.emitMessage(msg);
-					} catch (e) {
-						this.emitMessage(msg);
-					}
-				} else
+						if (res.length > 0) this.emitMessage(msg);	// dispatch the msg if it satisfies the filter criteria
+					} catch (e) {}	// sql statement is bad
+				} else	// no msg filter/selector exists for the subscription => dispatch the msg
 					this.emitMessage(msg);
 			}
 		}

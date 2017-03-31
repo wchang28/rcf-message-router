@@ -1,9 +1,15 @@
 "use strict";
-var __extends = (this && this.__extends) || function (d, b) {
-    for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
-    function __() { this.constructor = d; }
-    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
-};
+var __extends = (this && this.__extends) || (function () {
+    var extendStatics = Object.setPrototypeOf ||
+        ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
+        function (d, b) { for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p]; };
+    return function (d, b) {
+        extendStatics(d, b);
+        function __() { this.constructor = d; }
+        d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
 var rcf = require("rcf");
 var events = require("events");
 var _ = require("lodash");
@@ -51,27 +57,46 @@ var TopicConnection = (function (_super) {
     }
     TopicConnection.prototype.triggerChangeEvent = function () { this.emit('change'); };
     TopicConnection.prototype.emitMessage = function (msg) { this.emit('message', msg); };
+    TopicConnection.prototype.matchDestination = function (destinationSubscribed, destinationMsg) {
+        var s_sub = (destinationSubscribed.charAt(destinationSubscribed.length - 1) === "/" ? destinationSubscribed : destinationSubscribed + "/"); // make sure subscribed destination terminates with '/'
+        var s_msg = (destinationMsg.charAt(destinationMsg.length - 1) === "/" ? destinationMsg : destinationMsg + "/"); // make sure msg destination terminates with '/'
+        if (s_msg.length < s_sub.length)
+            return false;
+        else
+            return (s_msg.toLowerCase().substr(0, s_sub.length) === s_sub.toLowerCase()); //  msg destination is a sub-path of subscription
+    };
+    // build the message structure for dispatching
+    TopicConnection.prototype.buildMsgForDispatching = function (sub_id, destination, headers, message) {
+        var msg = {
+            headers: {
+                event: rcf.MessageEventType.MESSAGE,
+                sub_id: sub_id,
+                destination: destination
+            },
+            body: message
+        };
+        if (headers) {
+            for (var field in headers) {
+                if (!msg.headers[field])
+                    msg.headers[field] = headers[field];
+            }
+        }
+        return msg;
+    };
+    // returns the 'selector' header for the subscription, returns null if it doesn't have one 
+    TopicConnection.prototype.getSubscriptionSelector = function (subscription) {
+        if (subscription && subscription.hdrs && subscription.hdrs['selector'] && typeof subscription.hdrs['selector'] === 'string' && subscription.hdrs['selector'].length > 0)
+            return subscription.hdrs['selector'];
+        else
+            return null;
+    };
     TopicConnection.prototype.forwardMessage = function (destination, headers, message) {
         for (var sub_id in this.u) {
             var subscription = this.u[sub_id];
-            var pattern = new RegExp(subscription.dest, 'gi');
-            if (destination.match(pattern)) {
-                var msg = {
-                    headers: {
-                        event: rcf.MessageEventType.MESSAGE,
-                        sub_id: sub_id,
-                        destination: destination
-                    },
-                    body: message
-                };
-                if (headers) {
-                    for (var field in headers) {
-                        if (!msg.headers[field])
-                            msg.headers[field] = headers[field];
-                    }
-                }
-                if (subscription.hdrs && subscription.hdrs['selector'] && typeof subscription.hdrs['selector'] === 'string' && subscription.hdrs['selector'].length > 0) {
-                    var selector = subscription.hdrs['selector'];
+            if (this.matchDestination(subscription.dest, destination)) {
+                var msg = this.buildMsgForDispatching(sub_id, destination, headers, message); // construct the message for the client
+                var selector = this.getSubscriptionSelector(subscription);
+                if (selector) {
                     var msgHeaders = msg.headers;
                     var sql = "select * from ? where " + selector;
                     try {
@@ -79,9 +104,7 @@ var TopicConnection = (function (_super) {
                         if (res.length > 0)
                             this.emitMessage(msg);
                     }
-                    catch (e) {
-                        this.emitMessage(msg);
-                    }
+                    catch (e) { } // sql statement is bad
                 }
                 else
                     this.emitMessage(msg);
