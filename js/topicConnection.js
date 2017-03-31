@@ -57,7 +57,7 @@ var TopicConnection = (function (_super) {
     }
     TopicConnection.prototype.triggerChangeEvent = function () { this.emit('change'); };
     TopicConnection.prototype.emitMessage = function (msg) { this.emit('message', msg); };
-    TopicConnection.prototype.matchDestination = function (destinationSubscribed, destinationMsg) {
+    TopicConnection.prototype.destinationMatched = function (destinationSubscribed, destinationMsg) {
         var s_sub = (destinationSubscribed.charAt(destinationSubscribed.length - 1) === "/" ? destinationSubscribed : destinationSubscribed + "/"); // make sure subscribed destination terminates with '/'
         var s_msg = (destinationMsg.charAt(destinationMsg.length - 1) === "/" ? destinationMsg : destinationMsg + "/"); // make sure msg destination terminates with '/'
         if (s_msg.length < s_sub.length)
@@ -93,16 +93,16 @@ var TopicConnection = (function (_super) {
     TopicConnection.prototype.forwardMessage = function (destination, headers, message) {
         for (var sub_id in this.u) {
             var subscription = this.u[sub_id];
-            if (this.matchDestination(subscription.dest, destination)) {
-                var msg = this.buildMsgForDispatching(sub_id, destination, headers, message); // construct the message for the client
-                var selector = this.getSubscriptionSelector(subscription);
+            if (this.destinationMatched(subscription.dest, destination)) {
+                var msg = this.buildMsgForDispatching(sub_id, destination, headers, message); // construct the message for dispatching
+                var selector = this.getSubscriptionSelector(subscription); // get the msg filter/selector for the subscription
                 if (selector) {
                     var msgHeaders = msg.headers;
                     var sql = "select * from ? where " + selector;
                     try {
                         var res = alasql(sql, [[msgHeaders]]);
                         if (res.length > 0)
-                            this.emitMessage(msg);
+                            this.emitMessage(msg); // dispatch the msg if it satisfies the filter criteria
                     }
                     catch (e) { } // sql statement is bad
                 }
@@ -199,7 +199,7 @@ var TopicConnection = (function (_super) {
         enumerable: true,
         configurable: true
     });
-    TopicConnection.prototype.destroy = function () { this.s.destroy; };
+    TopicConnection.prototype.destroy = function () { this.s.destroy(); };
     TopicConnection.prototype.toJSON = function () {
         return {
             id: this.id,

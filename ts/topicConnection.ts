@@ -177,7 +177,7 @@ export class TopicConnection extends events.EventEmitter implements ITopicConnec
 	get bytesRead() : number {return this.s.bytesRead;}
 	get bytesWritten() : number {return this.s.bytesWritten;}
 	get destroyed() : boolean {return this.s.destroyed;}
-	destroy() : void {this.s.destroy;}
+	destroy() : void {this.s.destroy();}
 	
 	toJSON() : ITopicConnectionJSON {
 		return {

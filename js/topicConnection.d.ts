@@ -50,7 +50,7 @@ export declare class TopicConnection extends events.EventEmitter implements ITop
     constructor(conn_id: string, socket: Socket, cookie: any, messageCB: rcf.MessageCallback, keepAliveIntervalMS?: number);
     triggerChangeEvent(): void;
     private emitMessage(msg);
-    private matchDestination(destinationSubscribed, destinationMsg);
+    private destinationMatched(destinationSubscribed, destinationMsg);
     private buildMsgForDispatching(sub_id, destination, headers, message);
     private getSubscriptionSelector(subscription);
     forwardMessage(destination: string, headers: {
