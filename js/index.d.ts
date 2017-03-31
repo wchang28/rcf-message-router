@@ -42,7 +42,7 @@ export declare function destAuth(handler: DestAuthRequestHandler): express.Reque
 export interface IConnectionsManager {
     readonly ConnectionsCount: number;
     getConnection: (conn_id: string) => ITopicConnection;
-    findConnections: (criteria: (conn: ITopicConnection) => boolean) => ITopicConnection[];
+    findConnections: (criteria?: (conn: ITopicConnection) => boolean) => ITopicConnection[];
     dispatchMessage: (destination: string, headers: {
         [field: string]: any;
     }, message: any) => void;

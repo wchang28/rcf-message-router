@@ -77,7 +77,7 @@ export function destAuth(handler: DestAuthRequestHandler) : express.RequestHandl
 export interface IConnectionsManager {
     readonly ConnectionsCount: number;
     getConnection: (conn_id: string) => ITopicConnection;
-    findConnections: (criteria: (conn: ITopicConnection) => boolean) => ITopicConnection[];
+    findConnections: (criteria?: (conn: ITopicConnection) => boolean) => ITopicConnection[];
     dispatchMessage: (destination: string, headers: {[field: string]:any}, message:any) => void;
     on: (event: string, listener: Function) => this;
     toJSON: () => ITopicConnectionJSON[];
@@ -128,7 +128,7 @@ class ConnectionsManager extends events.EventEmitter implements IConnectionsMana
             throw ConnectionsManager.MSG_BAD_CONN;
     }
     getConnection(conn_id: string) : ITopicConnection /* might throws exception */ { return this.getConn(conn_id);}
-    findConnections(criteria: (conn: ITopicConnection) => boolean) : ITopicConnection[] {
+    findConnections(criteria?: (conn: ITopicConnection) => boolean) : ITopicConnection[] {
         let ret: ITopicConnection[] = [];
         for (let conn_id in this.__connections) {    // for each connection
             let conn = this.__connections[conn_id];
