@@ -132,7 +132,8 @@ class ConnectionsManager extends events.EventEmitter implements IConnectionsMana
         let ret: ITopicConnection[] = [];
         for (let conn_id in this.__connections) {    // for each connection
             let conn = this.__connections[conn_id];
-            if (criteria(conn)) ret.push(conn);
+            if (!criteria || criteria(conn))
+                ret.push(conn);
         }
         return ret;
     }

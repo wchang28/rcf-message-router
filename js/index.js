@@ -94,7 +94,7 @@ var ConnectionsManager = (function (_super) {
         var ret = [];
         for (var conn_id in this.__connections) {
             var conn = this.__connections[conn_id];
-            if (criteria(conn))
+            if (!criteria || criteria(conn))
                 ret.push(conn);
         }
         return ret;
