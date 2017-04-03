@@ -72,7 +72,7 @@ export function destAuth(handler: DestAuthRequestHandler) : express.RequestHandl
 // 2. client_connect (req: express.Request, conn: ITopicConnection)
 // 3. client_disconnect (req: express.Request, conn: ITopicConnection)
 // 4. client_cmd (req: express.Request, cmdType: ClientCommandType, conn_id: string, data: any)
-// 5. on_client_send_msg (req: express.Request, conn: ITopicConnection, SendMsgParams)
+// 5. on_client_send_msg (req: express.Request, conn: ITopicConnection, sendParams: SendMsgParams)
 // 6. sse_send (req: express.Request, s: string)
 export interface IConnectionsManager {
     readonly ConnectionsCount: number;
@@ -178,7 +178,7 @@ class ConnectionsManager extends events.EventEmitter implements IConnectionsMana
                 resolve(conn);
             else {
                 let defaultRejectMsg = 'not authorized to ' + authModeDescriptions[authMode] + ' on ' + destination;
-                // construct artifical req and res objects for the express router to route
+                // construct artificial req and res objects for the express router to route
                 ////////////////////////////////////////////////////////////////////////////////////////////
                 let req:any = {
                     "method": (authMode === DestAuthMode.Subscribe ? "GET" : "POST")

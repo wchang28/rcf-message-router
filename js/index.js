@@ -146,7 +146,7 @@ var ConnectionsManager = (function (_super) {
                 resolve(conn);
             else {
                 var defaultRejectMsg_1 = 'not authorized to ' + authModeDescriptions[authMode] + ' on ' + destination;
-                // construct artifical req and res objects for the express router to route
+                // construct artificial req and res objects for the express router to route
                 ////////////////////////////////////////////////////////////////////////////////////////////
                 var req = {
                     "method": (authMode === DestAuthMode.Subscribe ? "GET" : "POST"),
