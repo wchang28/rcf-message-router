@@ -1,6 +1,6 @@
 {
   "name": "rcf-message-router",
-  "version": "0.0.36",
+  "version": "0.0.37",
   "description": "RCF Message Notification Router",
   "main": "./js/index.js",
   "typings": "./js/index.d.ts",
@@ -18,16 +18,16 @@
   "author": "Wen Chang",
   "license": "MIT",
   "dependencies": {
-    "@types/body-parser": "0.0.33",
-    "@types/express": "^4.0.33",
-    "@types/lodash": "^4.14.52",
-    "@types/node": "^6.0.42",
-    "@types/shortid": "0.0.28",
-    "alasql": "^0.3.1",
-    "body-parser": "^1.15.2",
-    "express": "^4.14.0",
+    "@types/body-parser": "^1.16.3",
+    "@types/express": "^4.0.35",
+    "@types/lodash": "^4.14.64",
+    "@types/node": "^6.0.73",
+    "@types/shortid": "^0.0.29",
+    "alasql": "^0.3.9",
+    "body-parser": "^1.17.1",
+    "express": "^4.15.2",
     "lodash": "^4.17.4",
     "rcf": "git+https://github.com/wchang28/rcf.git",
-    "shortid": "^2.2.6"
+    "shortid": "^2.2.8"
   }
 }
