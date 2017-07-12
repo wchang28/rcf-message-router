@@ -203,7 +203,15 @@ var ConnectionsManager = (function (_super) {
 }(events.EventEmitter));
 ConnectionsManager.MSG_BAD_CONN = "bad connection";
 ConnectionsManager.MSG_BAD_DESTINATION = "bad destination";
+function appendPath(path_1, path_2) {
+    if (!path_1 || path_1 === "/")
+        return path_2;
+    else
+        return path_1 + path_2;
+}
 function get(eventPath, options) {
+    if (!eventPath)
+        eventPath = "/";
     options = options || defaultOptions;
     options = _.assignIn({}, defaultOptions, options);
     var connectionsManager = new ConnectionsManager(options.destinationAuthorizeRouter);
@@ -244,7 +252,7 @@ function get(eventPath, options) {
         });
         connectionsManager.emit('client_connect', req, conn); // fire the "client_connect" event
     });
-    router.post(eventPath + '/subscribe', function (req, res) {
+    router.post(appendPath(eventPath, '/subscribe'), function (req, res) {
         var data = req.body;
         connectionsManager.emit('client_cmd', req, 'subscribe', data.conn_id, data);
         connectionsManager.addConnSubscription(data.conn_id, data.sub_id, data.destination, data.headers)
@@ -254,7 +262,7 @@ function get(eventPath, options) {
             res.status(403).json({ exception: JSON.parse(JSON.stringify(err)) });
         });
     });
-    router.get(eventPath + '/unsubscribe', function (req, res) {
+    router.get(appendPath(eventPath, '/unsubscribe'), function (req, res) {
         var data = req.query;
         connectionsManager.emit('client_cmd', req, 'unsubscribe', data.conn_id, data);
         try {
@@ -265,7 +273,7 @@ function get(eventPath, options) {
             res.status(400).json({ exception: JSON.parse(JSON.stringify(e)) });
         }
     });
-    router.post(eventPath + '/send', function (req, res) {
+    router.post(appendPath(eventPath, '/send'), function (req, res) {
         var data = req.body;
         connectionsManager.emit('client_cmd', req, 'send', data.conn_id, data);
         connectionsManager.authorizeDestination(data.conn_id, DestAuthMode.SendMsg, data.destination, data.headers, data.body)

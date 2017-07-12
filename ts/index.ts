@@ -67,20 +67,18 @@ export function destAuth(handler: DestAuthRequestHandler) : express.RequestHandl
     }
 }
 
-// this interface emits the following events
-// 1. change ()
-// 2. client_connect (req: express.Request, conn: ITopicConnection)
-// 3. client_disconnect (req: express.Request, conn: ITopicConnection)
-// 4. client_cmd (req: express.Request, cmdType: ClientCommandType, conn_id: string, data: any)
-// 5. on_client_send_msg (req: express.Request, conn: ITopicConnection, sendParams: SendMsgParams)
-// 6. sse_send (req: express.Request, s: string)
 export interface IConnectionsManager {
     readonly ConnectionsCount: number;
     getConnection: (conn_id: string) => ITopicConnection;
     findConnections: (criteria?: (conn: ITopicConnection) => boolean) => ITopicConnection[];
     dispatchMessage: (destination: string, headers: {[field: string]:any}, message:any) => void;
-    on: (event: string, listener: Function) => this;
     toJSON: () => ITopicConnectionJSON[];
+    on(event: "change", listener: () => void) : this;
+    on(event: "client_connect", listener: (req: express.Request, conn: ITopicConnection) => void) : this;
+    on(event: "client_disconnect", listener: (req: express.Request, conn: ITopicConnection) => void) : this;
+    on(event: "client_cmd", listener: (req: express.Request, cmdType: ClientCommandType, conn_id: string, data: any) => void) : this;
+    on(event: "on_client_send_msg", listener: (req: express.Request, conn: ITopicConnection, sendParams: SendMsgParams) => void) : this;
+    on(event: "sse_send", listener: (req: express.Request, s: string) => void) : this;
 }
 
 // this class emits the following events
@@ -249,7 +247,15 @@ export interface IMsgRouterReturn {
     connectionsManager: IConnectionsManager;
 }
 
-export function get(eventPath: string, options?: Options) : IMsgRouterReturn {
+function appendPath(path_1: string, path_2: string) : string {
+    if (!path_1 || path_1 === "/")
+        return path_2;
+    else
+        return path_1 + path_2;
+}
+
+export function get(eventPath?: string, options?: Options) : IMsgRouterReturn {
+    if (!eventPath) eventPath = "/";
     options = options || defaultOptions;
     options = _.assignIn({}, defaultOptions, options);
     
@@ -295,7 +301,7 @@ export function get(eventPath: string, options?: Options) : IMsgRouterReturn {
         connectionsManager.emit('client_connect', req, conn);    // fire the "client_connect" event
     });
     
-    router.post(eventPath + '/subscribe', (req: express.Request, res: express.Response) => {
+    router.post(appendPath(eventPath, '/subscribe'), (req: express.Request, res: express.Response) => {
         let data = req.body;
         connectionsManager.emit('client_cmd', req, 'subscribe', data.conn_id, data);
         connectionsManager.addConnSubscription(data.conn_id, data.sub_id, data.destination, data.headers)
@@ -306,7 +312,7 @@ export function get(eventPath: string, options?: Options) : IMsgRouterReturn {
         });
     });
 
-    router.get(eventPath + '/unsubscribe', (req: express.Request, res: express.Response) => {
+    router.get(appendPath(eventPath, '/unsubscribe'), (req: express.Request, res: express.Response) => {
         let data = req.query;
         connectionsManager.emit('client_cmd', req, 'unsubscribe', data.conn_id, data);
         try {
@@ -317,7 +323,7 @@ export function get(eventPath: string, options?: Options) : IMsgRouterReturn {
         }
     });
 
-    router.post(eventPath + '/send', (req: express.Request, res: express.Response) => {
+    router.post(appendPath(eventPath, '/send'), (req: express.Request, res: express.Response) => {
         let data = req.body;
         connectionsManager.emit('client_cmd', req, 'send', data.conn_id, data);
         connectionsManager.authorizeDestination(data.conn_id, DestAuthMode.SendMsg, data.destination, data.headers, data.body)
