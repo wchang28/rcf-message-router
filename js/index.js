@@ -238,7 +238,7 @@ function get(eventPath, options) {
             res.write(s);
             connectionsManager.emit('sse_send', req, s);
         };
-        //res.write('\n');
+        res.write('\n');
         ///////////////////////////////////////////////////////////////////////
         // create a connection
         ///////////////////////////////////////////////////////////////////////

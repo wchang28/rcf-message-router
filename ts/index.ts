@@ -282,7 +282,7 @@ export function get(eventPath?: string, options?: Options) : IMsgRouterReturn {
             res.write(s);
             connectionsManager.emit('sse_send', req, s);
         }
-        //res.write('\n');
+        res.write('\n');
         ///////////////////////////////////////////////////////////////////////
 		
         // create a connection
