@@ -48,7 +48,7 @@ export interface IConnectionsManager {
     }, message: any) => void;
     toJSON: () => ITopicConnectionJSON[];
     on(event: "change", listener: () => void): this;
-    on(event: "client_connect", listener: (req: express.Request, conn: ITopicConnection) => void): this;
+    on(event: "client_connect", listener: (req: express.Request, conn: ITopicConnection, lastEventId?: string) => void): this;
     on(event: "client_disconnect", listener: (req: express.Request, conn: ITopicConnection) => void): this;
     on(event: "client_cmd", listener: (req: express.Request, cmdType: ClientCommandType, conn_id: string, data: any) => void): this;
     on(event: "on_client_send_msg", listener: (req: express.Request, conn: ITopicConnection, sendParams: SendMsgParams) => void): this;

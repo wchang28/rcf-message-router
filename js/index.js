@@ -42,7 +42,7 @@ function destAuth(handler) {
 exports.destAuth = destAuth;
 // this class emits the following events
 // 1. change ()
-// 2. client_connect (req: express.Request, conn: ITopicConnection)
+// 2. client_connect (req: express.Request, conn: ITopicConnection, lastEventId?: string)
 // 3. client_disconnect (req: express.Request, conn: ITopicConnection)
 // 4. client_cmd (req: express.Request, cmdType: ClientCommandType, conn_id: string, data: any)
 // 5. on_client_send_msg (req: express.Request, conn: ITopicConnection, SendMsgParams)
@@ -228,15 +228,17 @@ function get(eventPath, options) {
             'Connection': 'keep-alive'
         });
         // add a sseSend() method to the result object
-        res.sseSend = function (data, event) {
+        res.sseSend = function (data, event, id) {
             var s = "";
             if (event)
                 s += "event: " + event.toString() + "\n";
+            if (id)
+                s += "id: " + id.toString() + "\n";
             s += "data: " + JSON.stringify(data) + "\n\n";
             res.write(s);
             connectionsManager.emit('sse_send', req, s);
         };
-        res.write('\n');
+        //res.write('\n');
         ///////////////////////////////////////////////////////////////////////
         // create a connection
         ///////////////////////////////////////////////////////////////////////
@@ -250,7 +252,7 @@ function get(eventPath, options) {
             connectionsManager.removeConnection(conn.id);
             connectionsManager.emit('client_disconnect', req, conn); // fire the "client_disconnect" event
         });
-        connectionsManager.emit('client_connect', req, conn); // fire the "client_connect" event
+        connectionsManager.emit('client_connect', req, conn, req.headers["last-event-id"]); // fire the "client_connect" event
     });
     router.post(appendPath(eventPath, '/subscribe'), function (req, res) {
         var data = req.body;

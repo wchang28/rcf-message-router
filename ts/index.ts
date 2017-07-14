@@ -74,7 +74,7 @@ export interface IConnectionsManager {
     dispatchMessage: (destination: string, headers: {[field: string]:any}, message:any) => void;
     toJSON: () => ITopicConnectionJSON[];
     on(event: "change", listener: () => void) : this;
-    on(event: "client_connect", listener: (req: express.Request, conn: ITopicConnection) => void) : this;
+    on(event: "client_connect", listener: (req: express.Request, conn: ITopicConnection, lastEventId?: string) => void) : this;
     on(event: "client_disconnect", listener: (req: express.Request, conn: ITopicConnection) => void) : this;
     on(event: "client_cmd", listener: (req: express.Request, cmdType: ClientCommandType, conn_id: string, data: any) => void) : this;
     on(event: "on_client_send_msg", listener: (req: express.Request, conn: ITopicConnection, sendParams: SendMsgParams) => void) : this;
@@ -83,7 +83,7 @@ export interface IConnectionsManager {
 
 // this class emits the following events
 // 1. change ()
-// 2. client_connect (req: express.Request, conn: ITopicConnection)
+// 2. client_connect (req: express.Request, conn: ITopicConnection, lastEventId?: string)
 // 3. client_disconnect (req: express.Request, conn: ITopicConnection)
 // 4. client_cmd (req: express.Request, cmdType: ClientCommandType, conn_id: string, data: any)
 // 5. on_client_send_msg (req: express.Request, conn: ITopicConnection, SendMsgParams)
@@ -231,7 +231,7 @@ class ConnectionsManager extends events.EventEmitter implements IConnectionsMana
 }
 
 interface SSEResponse extends express.Response {
-    sseSend: (msg:any) => void;
+    sseSend: (msg:any, event?: string, id?: string) => void;
 }
 
 export type ClientCommandType = "subscribe" | "unsubscribe" | "send";
@@ -274,14 +274,15 @@ export function get(eventPath?: string, options?: Options) : IMsgRouterReturn {
             'Connection': 'keep-alive'
         });
         // add a sseSend() method to the result object
-        res.sseSend = (data: any, event? : any) => {
+        res.sseSend = (data: any, event?: string, id?: string) => {
             let s = "";
             if (event) s += "event: " + event.toString() + "\n";
+            if (id) s += "id: " + id.toString() + "\n";
             s+= "data: " + JSON.stringify(data) + "\n\n";
             res.write(s);
             connectionsManager.emit('sse_send', req, s);
         }
-        res.write('\n');
+        //res.write('\n');
         ///////////////////////////////////////////////////////////////////////
 		
         // create a connection
@@ -298,7 +299,7 @@ export function get(eventPath?: string, options?: Options) : IMsgRouterReturn {
             connectionsManager.emit('client_disconnect', req, conn); // fire the "client_disconnect" event
         });
 
-        connectionsManager.emit('client_connect', req, conn);    // fire the "client_connect" event
+        connectionsManager.emit('client_connect', req, conn, req.headers["last-event-id"]);    // fire the "client_connect" event
     });
     
     router.post(appendPath(eventPath, '/subscribe'), (req: express.Request, res: express.Response) => {
