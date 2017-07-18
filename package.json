@@ -1,6 +1,6 @@
 {
   "name": "rcf-message-router",
-  "version": "0.0.39",
+  "version": "0.0.40",
   "description": "RCF Message Notification Router",
   "main": "./js/index.js",
   "typings": "./js/index.d.ts",

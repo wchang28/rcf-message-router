@@ -294,7 +294,13 @@ export function get(eventPath?: string, options?: Options) : IMsgRouterReturn {
         ///////////////////////////////////////////////////////////////////////
 
         // The 'close' event is fired when a user closes their browser window.
+        /*
         req.on("close", () => {
+            connectionsManager.removeConnection(conn.id);
+            connectionsManager.emit('client_disconnect', req, conn); // fire the "client_disconnect" event
+        });
+        */
+        res.on("close", () => {
             connectionsManager.removeConnection(conn.id);
             connectionsManager.emit('client_disconnect', req, conn); // fire the "client_disconnect" event
         });

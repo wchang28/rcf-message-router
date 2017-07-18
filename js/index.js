@@ -248,7 +248,13 @@ function get(eventPath, options) {
         }, options.connKeepAliveIntervalMS);
         ///////////////////////////////////////////////////////////////////////
         // The 'close' event is fired when a user closes their browser window.
-        req.on("close", function () {
+        /*
+        req.on("close", () => {
+            connectionsManager.removeConnection(conn.id);
+            connectionsManager.emit('client_disconnect', req, conn); // fire the "client_disconnect" event
+        });
+        */
+        res.on("close", function () {
             connectionsManager.removeConnection(conn.id);
             connectionsManager.emit('client_disconnect', req, conn); // fire the "client_disconnect" event
         });
